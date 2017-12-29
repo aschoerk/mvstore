@@ -10,7 +10,6 @@ import java.nio.channels.FileChannel
 import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
-import kotlin.test.assertTrue
 
 /**
  * @author aschoerk
@@ -148,8 +147,8 @@ class RelationData(val b: IntBuffer, var index: Int) {
     }
     init {
         val formPgClassLen = b[index++]
-        assertTrue { b[index++] == 0 }  // ignore upper bits
-        assertTrue { formPgClassLen == 136 }
+        assert ( b[index++] == 0 )  // ignore upper bits
+        assert( formPgClassLen == 136 )
     }
     val rel = FormDataPgClass(b, index)
     init {
@@ -164,8 +163,8 @@ class RelationData(val b: IntBuffer, var index: Int) {
     init {
         for (i in 1..rel.relNAtts) {
             val attrLen = b[index++]
-            assertTrue { b[index++] == 0 }  // ignore upper bits
-            assertTrue { attrLen == 108 }
+            assert( b[index++] == 0 )  // ignore upper bits
+            assert( attrLen == 108 )
             attr.attrs.add(FormDataPgAttribute(b,index))
             index += 27
 
@@ -251,7 +250,7 @@ class FormDataPgClass(val b: IntBuffer, val indexP: Int) {
         var relFrozenXid = TransactionId(b[index++])
         var relMinMXid = TransactionId(b[index++])
     init {
-        assertTrue { index == indexP + 34 }
+        assert( index == indexP + 34 )
     }
 }
 
@@ -300,19 +299,18 @@ fun main(args: Array<String>) {
     val intbuffer = buffer.asIntBuffer();
 
     val maxInt = f.length() / 4
-
-    assertTrue {
-        val RELCACHE_INIT_FILEMAGIC = 0x573266
+    val RELCACHE_INIT_FILEMAGIC = 0x573266
+    assert(
         intbuffer[0] == RELCACHE_INIT_FILEMAGIC
-    }
+    )
 
     var currentIndex = 1;
 
     while (currentIndex < maxInt) {
         val descriptorLen = intbuffer[currentIndex++]
-        assertTrue {intbuffer[currentIndex++] == 0}  // ignore upper bits
-        assertTrue { descriptorLen == 0x150 }
-        assertTrue {currentIndex + 84 <= maxInt}
+        assert(intbuffer[currentIndex++] == 0)  // ignore upper bits
+        assert( descriptorLen == 0x150 )
+        assert(currentIndex + 84 <= maxInt)
         val relation = RelationData(intbuffer, currentIndex)
         currentIndex += 84
        

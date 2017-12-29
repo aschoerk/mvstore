@@ -263,7 +263,7 @@ public class Transfer {
      * Write a number of bytes.
      *
      * @param buff the value
-     * @param off the offset
+     * @param off the entryOffset
      * @param len the length
      * @return itself
      */
@@ -291,7 +291,7 @@ public class Transfer {
      * Read a number of bytes.
      *
      * @param buff the target buffer
-     * @param off the offset
+     * @param off the entryOffset
      * @param len the number of bytes to read
      */
     public void readBytes(byte[] buff, int off, int len) throws IOException {

@@ -32,19 +32,7 @@ class NioObjectBufferTest {
     }
 
     @Test fun testInt() {
-        val b = NioObjectBuffer(intBuffer,1)
-        assertEquals(1, b.getInt())
-        assertEquals(b.idx, 2)
-        assertEquals(2, b.getInt())
-        assertEquals(b.idx, 3)
-        assertEquals(3, b.getByte(16))
-        assertEquals(b.idx, 5)
-        assertEquals(0, b.getByte(17))
-        assertEquals(b.idx, 5)
-        assertTrue { b.getBoolean(16) }
-        assertEquals(b.idx, 5)
-        assertFalse { b.getBoolean(17) }
-        assertEquals(b.idx, 5)
+
 
     }
 

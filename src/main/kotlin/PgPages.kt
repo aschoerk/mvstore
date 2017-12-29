@@ -8,17 +8,55 @@ import java.nio.ByteBuffer
 
 class PageXLogRecPtr(val xlogid: Int, val xrecoff: Int)
 
-class PageHeaderData(b: NioBufferWithOffset) {
-    val lsn = PageXLogRecPtr(b.getInt(0), b.getInt(4))
-    val checksum = b.getShort(8)
-    val flags = b.getShort(10)
-    val lower = b.getShort(12)
-    val upper = b.getShort(14)
-    val special = b.getShort(16)
-    val pageSizeVersion = b.getShort(18)
-    val pruneXid = b.getInt(20)
+class PageHeaderData(b: NioBufferWithOffset) : NioBufferWithOffset(b){
+    val lsn get() = PageXLogRecPtr(getInt(0), getInt(4))
+    val checksum get() =  getShort(8)
+    val flags get() =  getShort(10)
+    val lower get() =  getShort(12)
+    val upper get() =  getShort(14)
+    val special get() =  getShort(16)
+    val pageSizeVersion get() =  getShort(18)
+    val pruneXid get() =  getInt(20)
+    fun getItemIdData(i: Int) : ItemIdData {
+        val numItems = if (lower <= 24) 0 else (upper - lower) / 4
+        if (i >= numItems)
+            throw IndexOutOfBoundsException("Accessing Page Items")
+        return ItemIdData(getInt(24 + i * 4))
+    }
+
 }
 
+class ItemIdData(data: Int) {
+    val off = data and 0x7FFF
+    val len = data ushr 17
+    val flag1 = data shr 15 and 1
+    val flag2 = data shr 16 and 1
+}
+
+
+class NioItem(b: NioBufferWithOffset, val itemIdData: ItemIdData) : NioBufferWithOffset(b.b, b.offset + itemIdData.off) {
+    override fun toString() : String {
+        val sb = StringBuilder()
+        val cb = StringBuilder()
+        for(i in 0..itemIdData.len-1) {
+            val b = getByte(i)
+            if (sb.length > 0) sb.append(" ")
+            if (b >= 31 && b <= 126) {
+                cb.append(b.toChar())
+            } else {
+                cb.append('.')
+            }
+            val out = ((b.toInt()) and 0xFF).toString(16)
+            if (out.length == 1)
+                sb.append("0")
+            sb.append(out)
+        }
+        sb.append("\n    - ")
+        sb.append(cb)
+        return sb.toString()
+    }
+
+}
 
 class Page(b: ByteBuffer, number: Int) : NioBufferWithOffset(b, number * BLCKSZ) {
     val header = PageHeaderData(this)
@@ -28,7 +66,7 @@ class Page(b: ByteBuffer, number: Int) : NioBufferWithOffset(b, number * BLCKSZ)
             throw IndexOutOfBoundsException("Accessing Page Items")
         return ItemIdData(getInt(24 + i * 4))
     }
-    fun getItem(i: Int) = NioItem(b, getItemIdData(i))
+    fun getItem(i: Int) = NioItem(this, getItemIdData(i))
 }
 
 fun main(args: Array<String>) {

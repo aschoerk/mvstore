@@ -11,7 +11,6 @@ import java.nio.ByteOrder
 import java.nio.IntBuffer
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
-import kotlin.test.assertTrue
 
 val RELKIND_RELATION = 'r'
 val RELKIND_INDEX = 'i'
@@ -232,8 +231,8 @@ val RELATION_SIZE = 0x150L
 val FORM_SIZE = 0x88L
 
 fun interpretPgCachePart(part: List<NioSizedObject>) {
-    assertTrue(part[0].len == RELATION_SIZE)
-    assertTrue(part[1].len == FORM_SIZE)
+    assert(part[0].len == RELATION_SIZE)
+    assert(part[1].len == FORM_SIZE)
 
 
 }

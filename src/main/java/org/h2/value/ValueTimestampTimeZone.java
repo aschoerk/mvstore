@@ -52,7 +52,7 @@ public class ValueTimestampTimeZone extends Value {
      */
     private final long timeNanos;
     /**
-     * Time zone offset from UTC in minutes, range of -12hours to +12hours
+     * Time zone entryOffset from UTC in minutes, range of -12hours to +12hours
      */
     private final short timeZoneOffsetMins;
 
@@ -78,7 +78,7 @@ public class ValueTimestampTimeZone extends Value {
      * @param dateValue the date value, a bit field with bits for the year,
      *            month, and day
      * @param timeNanos the nanoseconds since midnight
-     * @param timeZoneOffsetMins the timezone offset in minutes
+     * @param timeZoneOffsetMins the timezone entryOffset in minutes
      * @return the value
      */
     public static ValueTimestampTimeZone fromDateValueAndNanos(long dateValue,
@@ -195,9 +195,9 @@ public class ValueTimestampTimeZone extends Value {
     }
 
     /**
-     * The timezone offset in minutes.
+     * The timezone entryOffset in minutes.
      *
-     * @return the offset
+     * @return the entryOffset
      */
     public short getTimeZoneOffsetMins() {
         return timeZoneOffsetMins;
@@ -292,7 +292,7 @@ public class ValueTimestampTimeZone extends Value {
         // We are pretending that the dateValue is in UTC because that gives us
         // a stable sort even if the DST database changes.
 
-        // convert to minutes and add timezone offset
+        // convert to minutes and add timezone entryOffset
         long a = DateTimeUtils.convertDateValueToMillis(
                 TimeZone.getTimeZone("UTC"), dateValue) /
                 (1000L * 60L);
@@ -300,7 +300,7 @@ public class ValueTimestampTimeZone extends Value {
         a += ma;
         a -= timeZoneOffsetMins;
 
-        // convert to minutes and add timezone offset
+        // convert to minutes and add timezone entryOffset
         long b = DateTimeUtils.convertDateValueToMillis(
                 TimeZone.getTimeZone("UTC"), t.dateValue) /
                 (1000L * 60L);
