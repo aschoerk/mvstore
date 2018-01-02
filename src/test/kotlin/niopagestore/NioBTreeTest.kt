@@ -76,4 +76,20 @@ class NioBtreeTest {
         }
     }
 
+    @Test
+    fun simpleBTreeTestRootSplit() {
+        val filep = file
+        if (filep == null)
+            throw AssertionError("")
+        val tree = NioBTree(filep)
+        val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
+        // split will be necessary
+        for (i in 1..20) {
+            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
+        }
+        for (i in 1..20) {
+            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
+        }
+    }
+
 }

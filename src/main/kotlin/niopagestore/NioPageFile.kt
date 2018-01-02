@@ -121,26 +121,27 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
         }
     }
 
-    class IndexEntry(val idx: Short, var offs: Int, var len: Int, var deleted: Boolean) {
+    class IndexEntry(val idx: Short, var offs: Int, var len: Int, var deleted: Boolean, var canBeReused: Boolean) {
+        constructor(idx: Short, offs: Int, len: Int, deleted: Boolean) : this(idx, offs, len, deleted, false)
         constructor(idx: Short, elementIndexValue: Int)
-                : this(idx,elementIndexValue ushr 17, elementIndexValue and 0x7FFF, elementIndexValue and 0x8000 != 0)
+                : this(idx,
+                elementIndexValue ushr 17,
+                elementIndexValue and 0x7FFF,
+                elementIndexValue and 0x8000 != 0,
+                elementIndexValue and 0x10000 != 0)
         constructor(page: NioPageFilePage, offset: Long)
                 : this(((offset - page.END_OF_HEADER - page.offset) / page.INDEX_ENTRY_SIZE).toShort(), page.file.getInt(offset))
         constructor(page: NioPageFilePage, idx: Short)
                 : this(idx, page.file.getInt(page.offset + page.END_OF_HEADER + idx * page.INDEX_ENTRY_SIZE))
 
         val value
-            get() = (offs shl 17) or len or if (deleted) 0x8000 else 0x0000
+            get() =(offs shl 17) or len or (if (deleted) 0x8000 else 0x0000) or (if (canBeReused) 0x10000 else 0x00000)
+
         fun setInPage(page: NioPageFilePage) {
             page.file.setInt(page.offset + page.END_OF_HEADER + idx * page.INDEX_ENTRY_SIZE, value)
         }
 
         fun offsetInFile(page: NioPageFilePage) = offs + page.offset
-
-
-        fun canBeReused(): Boolean {
-            return deleted && offs == 0
-        }
 
     }
 
@@ -151,7 +152,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
     }
 
 
-    public fun indexEntries() : Iterator<IndexEntry> {
+    fun indexEntries() : Iterator<IndexEntry> {
         return object : Iterator<IndexEntry> {
             private var current = 0
             override fun hasNext(): Boolean = current < (file.getInt(offset + AFTER_ELEMENT_INDEX) - END_OF_HEADER) / INDEX_ENTRY_SIZE
@@ -216,7 +217,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
             assert(file.getShort(offset + FREE_ENTRY_INDEX) > 0)
             file.setShort(offset + FREE_ENTRY_INDEX ,(file.getShort(offset + FREE_ENTRY_INDEX) - 1).toShort())
             for (e in indexEntries()) {
-                if (e.canBeReused()) {
+                if (e.canBeReused) {
                     file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, proposedOffset)        // pre allocate space below the other allocated space
                     // maintain index
                     e.offs = proposedOffset
@@ -239,11 +240,13 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
     fun compactIndexArea() {
         val entries = mutableListOf<IndexEntry>();
         indexEntries().forEach {
-            if (it.len > 0) entries.add(it)
+            if (it.deleted && it.offs != 0)
+                throw AssertionError(" can't compact index on fixed page")
+            entries.add(it)
         }
         var indexOffset = END_OF_HEADER
         for (e in entries) {
-            if (!e.deleted) {
+            if (!e.deleted || e.offs != 0) {
                 file.setInt(offset + indexOffset, e.value)
                 indexOffset += INDEX_ENTRY_SIZE
             } else {
@@ -326,7 +329,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
             addToFreeSpace(entry.len)
             entry.deleted = true
         }
-        entry.offs = 0 // means: can be reused
+        entry.canBeReused = true // means: can be reused
         file.setShort(offset + FREE_ENTRY_INDEX, (file.getShort(offset + FREE_ENTRY_INDEX) + 1).toShort())
         entry.setInPage(this)
     }
@@ -349,6 +352,11 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
 class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBufferWithOffset(buffer, 0) {
     val FREESPACE_OFFSET = PAGESIZE
     val HEADER_OFFSET = 0
+    val ROOT_PAGE_OFFSET = 32L
+
+    var rootPage
+        get() = getInt(offset + ROOT_PAGE_OFFSET)
+        set(value) = setInt(offset + ROOT_PAGE_OFFSET, value)
 
     val freeMap = FreeSpace(this)
 
@@ -361,6 +369,8 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
 
     fun usedPagesIterator() = freeMap.usedPagesIterator()
 
+
+
 }
 
 const val PAGESIZE = 8192L
@@ -368,6 +378,7 @@ const val START_OF_MAP = 16L
 const val FREEMAP_MAGIC = 0x16578954
 const val PAGE_MAGIC = -0x12568762
 const val MIN_INITIAL_SIZE = PAGESIZE * 16 * 8
+
 
 class FreeSpace(val file: NioPageFile) {
 
