@@ -1,20 +1,59 @@
-package niopagestore
+package niopageentries
 
 import niopageobjects.NioPageFile
-import niopagestore.NioPageEntryType.*
+import niopageentries.NioPageEntryType.*
+import java.util.*
 
 enum class NioPageEntryType {
     BYTE_ARRAY, PAGEENTRY_ARRAY, CHAR, BYTE,
-    SHORT, INT, LONG, FLOAT, DOUBLE, STRING, ARRAY, BOOLEAN }
+    SHORT, INT, LONG, FLOAT, DOUBLE, STRING, ARRAY, BOOLEAN, EMPTY, ELSE }
 
 
-interface NioPageEntry {
+interface NioPageEntry : Comparable<NioPageEntry> {
     val length: Int
     val type: NioPageEntryType
     fun marshalTo(file: NioPageFile, offset: Long)
 }
 
-class ArrayPageEntry(val a: Array<NioPageEntry>) : NioPageEntry {
+abstract class NioPageNumberEntryBase(val number: Number) {
+    fun compareTo(other: NioPageEntry): Int {
+        if (this == other) return 0
+        if (other !is NioPageNumberEntryBase)
+            return hashCode().compareTo(other.hashCode())
+        else
+            return (this.number.toDouble().compareTo((other as NioPageNumberEntryBase).number.toDouble()))
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is NioPageNumberEntryBase) return false
+
+        if (number.toDouble() != other.number.toDouble()) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        return number.toInt().hashCode()
+    }
+
+
+}
+
+class ListPageEntry(val a: MutableList<NioPageEntry>) : NioPageEntry {
+    constructor(a: Array<NioPageEntry>) : this(a.toMutableList())
+    override fun compareTo(other: NioPageEntry): Int {
+        if (this == other) return 0
+        if (javaClass != other?.javaClass) return hashCode().compareTo(other.hashCode())
+        other as ListPageEntry
+        for (i in 1..minOf(this.a.size, other.a.size)) {
+            val tmp = a[i-1].compareTo(other.a[i-1])
+            if (tmp != 0)
+                return tmp
+        }
+        return this.a.size.compareTo(other.a.size)
+    }
+
     override val length: Int
         get() = 1 + 4 + a.sumBy { e -> e.length }//To change initializer of created properties use File | Settings | File Templates.
     override val type: NioPageEntryType
@@ -30,9 +69,24 @@ class ArrayPageEntry(val a: Array<NioPageEntry>) : NioPageEntry {
         }
     }
 
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as ListPageEntry
+
+        if (a != other.a) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        return a.hashCode()
+    }
+
 }
 
-class BooleanPageEntry(val v: Boolean) : NioPageEntry {
+class BooleanPageEntry(val v: Boolean) : NioPageEntry, NioPageNumberEntryBase(if (v) 1 else 0) {
     override val length: Int
         get() = 2
     override val type: NioPageEntryType
@@ -44,7 +98,35 @@ class BooleanPageEntry(val v: Boolean) : NioPageEntry {
     }
 }
 
-class BytePageEntry(val v: Byte) : NioPageEntry {
+class EmptyPageEntry() : NioPageEntry {
+    override val length: Int
+        get() = 1
+    override val type: NioPageEntryType
+        get() = EMPTY
+
+    override fun marshalTo(file: NioPageFile, offset: Long) {
+        file.setByte(offset, EMPTY.ordinal.toByte())
+    }
+
+    override fun compareTo(other: NioPageEntry): Int {
+        if (other !is EmptyPageEntry) return -1
+        return 0
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is EmptyPageEntry) return false
+        return true
+    }
+
+    override fun hashCode(): Int {
+        return javaClass.hashCode()
+    }
+
+
+}
+
+class BytePageEntry(val v: Byte) : NioPageEntry, NioPageNumberEntryBase(v) {
     override val length: Int
         get() = 2
     override val type: NioPageEntryType
@@ -56,7 +138,7 @@ class BytePageEntry(val v: Byte) : NioPageEntry {
     }
 }
 
-class CharPageEntry(val v: Char) : NioPageEntry {
+class CharPageEntry(val v: Char) : NioPageEntry, NioPageNumberEntryBase(v.toByte()) {
     override val length: Int
         get() = 2
     override val type: NioPageEntryType
@@ -68,8 +150,9 @@ class CharPageEntry(val v: Char) : NioPageEntry {
     }
 }
 
-class StringPageEntry(val b: ByteArray) : NioPageEntry {
-    constructor(s: String) : this(s.toByteArray(Charsets.UTF_8))
+class StringPageEntry(val s: String) : NioPageEntry {
+    val b = s.toByteArray(Charsets.UTF_8)
+    constructor(b: ByteArray) : this(String(b, Charsets.UTF_8))
     override val length: Int
         get() = b.size+5
     override val type: NioPageEntryType
@@ -80,9 +163,30 @@ class StringPageEntry(val b: ByteArray) : NioPageEntry {
         file.setInt(offset+1, b.size)
         file.setByteArray(offset+5, b)
     }
+
+    override fun compareTo(other: NioPageEntry): Int {
+        if (this == other) return 0
+        if (javaClass != other?.javaClass) return hashCode().compareTo(other.hashCode())
+        return this.s.compareTo((other as StringPageEntry).s)
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is StringPageEntry) return false
+
+        if (s != other.s) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        return s.hashCode()
+    }
+
+
 }
 
-class ShortPageEntry(val v: Short) : NioPageEntry {
+class ShortPageEntry(val v: Short) : NioPageEntry, NioPageNumberEntryBase(v) {
     override val length: Int
         get() = 2
     override val type: NioPageEntryType
@@ -94,7 +198,7 @@ class ShortPageEntry(val v: Short) : NioPageEntry {
     }
 }
 
-class IntPageEntry(val v: Int) : NioPageEntry {
+class IntPageEntry(val v: Int) : NioPageEntry, NioPageNumberEntryBase(v) {
     override val length: Int
         get() = 5
     override val type: NioPageEntryType
@@ -107,7 +211,7 @@ class IntPageEntry(val v: Int) : NioPageEntry {
 
 }
 
-class LongPageEntry(val v: Long) : NioPageEntry {
+class LongPageEntry(val v: Long) : NioPageEntry, NioPageNumberEntryBase(v) {
     override val length: Int
         get() = 9
     override val type: NioPageEntryType
@@ -120,7 +224,7 @@ class LongPageEntry(val v: Long) : NioPageEntry {
 
 }
 
-class FloatPageEntry(val b: Float) : NioPageEntry {
+class FloatPageEntry(val f: Float) : NioPageEntry, NioPageNumberEntryBase(f) {
     override val length: Int
         get() = 5
     override val type: NioPageEntryType
@@ -128,11 +232,11 @@ class FloatPageEntry(val b: Float) : NioPageEntry {
 
     override fun marshalTo(file: NioPageFile, offset: Long) {
         file.setByte(offset, FLOAT.ordinal.toByte())
-        file.setFloat(offset+1, b)
+        file.setFloat(offset+1, f)
     }
 }
 
-class DoublePageEntry(val b: Double) : NioPageEntry {
+class DoublePageEntry(val d: Double) : NioPageEntry, NioPageNumberEntryBase(d) {
     override val length: Int
         get() = 9
     override val type: NioPageEntryType
@@ -140,7 +244,7 @@ class DoublePageEntry(val b: Double) : NioPageEntry {
 
     override fun marshalTo(file: NioPageFile, offset: Long) {
         file.setByte(offset, DOUBLE.ordinal.toByte())
-        file.setDouble(offset+1, b)
+        file.setDouble(offset+1, d)
     }
 }
 
@@ -155,9 +259,36 @@ class ByteArrayPageEntry(val ba: ByteArray) : NioPageEntry {
         file.setInt(offset, ba.size)
         file.setByteArray(offset+5, ba)
     }
+
+    override fun compareTo(other: NioPageEntry): Int {
+        if (this === other) return 0
+        if (javaClass != other?.javaClass) return hashCode().compareTo(other.hashCode())
+        other as ByteArrayPageEntry
+        for (i in 1..minOf(this.ba.size, other.ba.size)) {
+            val tmp = ba[i-1].compareTo(other.ba[i-1])
+            if (tmp != 0)
+                return tmp
+        }
+        return this.ba.size.compareTo(other.ba.size)
+
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ByteArrayPageEntry) return false
+
+        if (!Arrays.equals(ba, other.ba)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        return Arrays.hashCode(ba)
+    }
+
 }
 
-fun marshalFrom(file: NioPageFile, offset: Long): NioPageEntry {
+fun unmarshalFrom(file: NioPageFile, offset: Long): NioPageEntry {
     val type = values()[file.getByte(offset).toInt()]
     when (type) {
         BYTE -> return BytePageEntry(file.getByte(offset+1))
@@ -184,15 +315,17 @@ fun marshalFrom(file: NioPageFile, offset: Long): NioPageEntry {
             val a: MutableList<NioPageEntry> = mutableListOf()
             var currentOffset = 0;
             while(currentOffset < len) {
-                val el = marshalFrom(file,offset + 5 + currentOffset)
+                val el = unmarshalFrom(file,offset + 5 + currentOffset)
                 a.add(el)
                 currentOffset += el.length
             }
-            return ArrayPageEntry(a.toTypedArray())
+            return ListPageEntry(a.toTypedArray())
+        }
+        EMPTY -> {
+            throw AssertionError("Should not try to unmarshal empty")
         }
         else -> {
             throw IndexOutOfBoundsException("did not find valud NioPageEntry")
         }
     }
-
 }

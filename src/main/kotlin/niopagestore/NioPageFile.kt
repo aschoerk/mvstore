@@ -4,8 +4,8 @@
 
 package niopageobjects
 
+import niopageentries.NioPageEntry
 import niopagestore.MMapper
-import niopagestore.NioPageEntry
 import org.agrona.concurrent.MappedResizeableBuffer
 
 open class NioBufferWithOffset(val b: MappedResizeableBuffer, val offset: Long) {
@@ -97,6 +97,9 @@ class NioPageIndexEntry(val entryOffset: Long) {
 
 
 class NioPageFilePage(val file: NioPageFile, val offset: Long) {
+    constructor(file: NioPageFile, number: Int) : this(file, number.toLong() * PAGESIZE)
+    val number
+        get() = (offset / PAGESIZE).toInt()
     val END_OF_HEADER = 24          // size of the header information
     val FLAGS_INDEX = 2             // flags about the page bit 30 is always set
     val FREE_ENTRY_INDEX = 0
@@ -132,6 +135,9 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
             page.file.setInt(page.offset + page.END_OF_HEADER + idx * page.INDEX_ENTRY_SIZE, value)
         }
 
+        fun offsetInFile(page: NioPageFilePage) = offs + page.offset
+
+
         fun canBeReused(): Boolean {
             return deleted && offs == 0
         }
@@ -145,7 +151,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
     }
 
 
-    private fun indexEntries() : Iterator<IndexEntry> {
+    public fun indexEntries() : Iterator<IndexEntry> {
         return object : Iterator<IndexEntry> {
             private var current = 0
             override fun hasNext(): Boolean = current < (file.getInt(offset + AFTER_ELEMENT_INDEX) - END_OF_HEADER) / INDEX_ENTRY_SIZE
@@ -290,6 +296,10 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
 
     public fun remove(entry: NioPageIndexEntry): Unit {
         val entry = IndexEntry(this, entry.entryOffset)
+        remove(entry)
+    }
+
+    fun remove(entry: IndexEntry) {
         if (entry.offs == 0)
             throw IndexOutOfBoundsException("entry to be removed is already")
         if (!entry.deleted) {
@@ -300,7 +310,6 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
         file.setShort(offset + FREE_ENTRY_INDEX, (file.getShort(offset + FREE_ENTRY_INDEX) + 1).toShort())
         entry.setInPage(this)
     }
-
 
 
     operator override fun equals(other: Any?): Boolean {

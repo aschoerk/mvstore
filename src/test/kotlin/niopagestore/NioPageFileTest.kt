@@ -2,6 +2,7 @@ package niopagestore
 
 import junit.framework.Assert.assertFalse
 import junit.framework.Assert.assertTrue
+import niopageentries.DoublePageEntry
 import niopageobjects.NioPageFile
 import niopageobjects.NioPageFilePage
 import niopageobjects.NioPageIndexEntry
