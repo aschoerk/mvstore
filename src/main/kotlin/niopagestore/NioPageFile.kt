@@ -236,6 +236,24 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
         file.setInt(offset + FREE_SPACE_INDEX, file.getInt(offset + FREE_SPACE_INDEX) + length) // maintain freespace info
     }
 
+    fun compactIndexArea() {
+        val entries = mutableListOf<IndexEntry>();
+        indexEntries().forEach {
+            if (it.len > 0) entries.add(it)
+        }
+        var indexOffset = END_OF_HEADER
+        for (e in entries) {
+            if (!e.deleted) {
+                file.setInt(offset + indexOffset, e.value)
+                indexOffset += INDEX_ENTRY_SIZE
+            } else {
+                addToFreeSpace(INDEX_ENTRY_SIZE)
+            }
+        }
+        file.setInt(offset + AFTER_ELEMENT_INDEX, indexOffset)
+        file.setShort(offset + FREE_ENTRY_INDEX ,0.toShort())
+    }
+
     private fun compactPayloadArea(): Int {
         var toMove = 0
         val entries = mutableListOf<IndexEntry>();
@@ -267,11 +285,13 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
     private fun newBeginOfPayloadArea(length: Int) = file.getInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX) - length
 
     public fun allocationFitsIntoPage(length: Int) =
-            file.getInt(offset + FREE_SPACE_INDEX) >=
+            freeSpace() >=
                     length +
                         if (file.getShort(offset + FREE_ENTRY_INDEX) > 0)
                             0
                         else INDEX_ENTRY_SIZE;
+
+    fun freeSpace() = file.getInt(offset + FREE_SPACE_INDEX)
 
     public fun add(entry: NioPageEntry): NioPageIndexEntry {
         if (!allocationFitsIntoPage(entry.length))

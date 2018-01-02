@@ -4,13 +4,13 @@ import nioobjects.TXIdentifier
 import niopageentries.*
 import niopageobjects.NioPageFile
 import niopageobjects.NioPageFilePage
+import niopageobjects.PAGESIZE
 
 
-class NioBTreeEntry(val key: NioPageEntry, val value: NioPageEntry, val indexEntry: NioPageFilePage.IndexEntry?) : NioPageEntry {
-    constructor(key: NioPageEntry, value: NioPageEntry) : this(key, value, null)
+class NioBTreeEntry(val key: NioPageEntry, val values: ListPageEntry, val indexEntry: NioPageFilePage.IndexEntry?) : NioPageEntry {
+    constructor(key: NioPageEntry, value: NioPageEntry) : this(key, ListPageEntry(mutableListOf(value)), null)
 
-    val values: ListPageEntry = ListPageEntry(mutableListOf(value))
-    var childPageNumber: Int? = null
+    var childPageNumber: Int? = null  // if not null points to a page containing bigger keys then this
 
     val isInnerNode
         get() = childPageNumber != null
@@ -20,7 +20,8 @@ class NioBTreeEntry(val key: NioPageEntry, val value: NioPageEntry, val indexEnt
 
     override fun compareTo(other: NioPageEntry): Int {
         if (this === other) return 0
-        if (javaClass != other.javaClass) return hashCode().compareTo(other.hashCode())
+        if (javaClass != other.javaClass)
+            return key.hashCode().compareTo(other.hashCode())
         other as NioBTreeEntry
         return key.compareTo(other.key)
     }
@@ -68,21 +69,22 @@ class NioBTreeEntry(val key: NioPageEntry, val value: NioPageEntry, val indexEnt
 }
 
 fun unmarshallEntry(page: NioPageFilePage, indexEntry: NioPageFilePage.IndexEntry): NioBTreeEntry {
-
+    assert (!indexEntry.deleted)
     val offset = indexEntry.offsetInFile(page)
     var key = unmarshalFrom(page.file, offset)
-    var value = unmarshalFrom(page.file, offset + key.length)
-    val keyValueLen = key.length + value.length
-    val result = NioBTreeEntry(key, value, indexEntry)
+    var values = unmarshalFrom(page.file, offset + key.length)
+    val keyValueLen = key.length + values.length
+    values as ListPageEntry
+    val result = NioBTreeEntry(key, values, indexEntry)
     if (keyValueLen < indexEntry.len) {
         assert(indexEntry.len - keyValueLen == 4)
-        var childpage = page.file.getInt(page.offset + keyValueLen)
+        var childpage = page.file.getInt(offset + keyValueLen)
         result.childPageNumber = childpage
     }
     return result
 }
 
-class NioBTree(val file: NioPageFile, val keyType: NioPageEntryType) {
+class NioBTree(val file: NioPageFile) {
     var root: NioPageFilePage? = null
 
     private fun insert(page: NioPageFilePage, toInsert: NioBTreeEntry, value: NioPageEntry): NioBTreeEntry? {
@@ -93,7 +95,7 @@ class NioBTree(val file: NioPageFile, val keyType: NioPageEntryType) {
         val toInsertIndex = if (greater == null) pageEntries.size else pageEntries.indexOf(greater)
         if (greater != null && greater == toInsert) {
             // the key is found in the current page, multiples are allowed, so add the value to the BTreeEntryValues-List
-            if (page.allocationFitsIntoPage(toInsert.value.length)) {
+            if (page.allocationFitsIntoPage(toInsert.values.length)) {
                 greater.addValue(value)
                 if (greater.indexEntry == null)
                     throw AssertionError("should not be null here")
@@ -139,7 +141,8 @@ class NioBTree(val file: NioPageFile, val keyType: NioPageEntryType) {
     private fun getSortedEntries(page: NioPageFilePage): MutableList<NioBTreeEntry> {
         var pageEntries = mutableListOf<NioBTreeEntry>()
         page.indexEntries().forEach {
-            pageEntries.add(unmarshallEntry(page, it))
+            if (!it.deleted)
+                pageEntries.add(unmarshallEntry(page, it))
         }
 
         pageEntries.sort()
@@ -221,16 +224,112 @@ class NioBTree(val file: NioPageFile, val keyType: NioPageEntryType) {
         insert(getPrepareRoot(), toInsert, value)
     }
 
-    private fun delete(page: NioPageFilePage, toDelete: NioBTreeEntry, value: NioPageEntry): NioBTreeEntry? {
-        val len = toDelete.length
+    private fun delete(page: NioPageFilePage, toDelete: NioPageEntry, value: NioPageEntry, changedPages: MutableList<Int>): Unit {
         var pageEntries = getSortedEntries(page)
+        val greater = pageEntries.find { it.compareTo(toDelete) >= 0 }
+        val index = if (greater == null) pageEntries.size else pageEntries.indexOf(greater)
+        if (greater != null && greater.compareTo(toDelete) != 0 || greater == null) {  // not found yet
+            assert (index > 0)
+            val nextChildPageNo = pageEntries[index - 1].childPageNumber
+            if (nextChildPageNo == null) {
+                throw IndexOutOfBoundsException("entry to be deleted not found in tree")
+            }
+            val child = NioPageFilePage(file, nextChildPageNo)
+            delete(child, toDelete, value, changedPages)
+        } else {
+            val greaterIndexEntry = greater.indexEntry
+            if (greaterIndexEntry == null)
+                throw AssertionError("sorted pageentries generated with indexentry null")
+            val orgSize = greater.values.a.size
+            if (value !is EmptyPageEntry)
+                greater.values.a.remove(value)
 
+            if (greater.values.a.size < orgSize || value is EmptyPageEntry) {
+                if (greater.values.a.size == 0 || value is EmptyPageEntry) {
+                    val nextChildPageNo = pageEntries[index].childPageNumber
+                    if (nextChildPageNo == null) {
+                        page.remove(greater.indexEntry)
+                        changedPages.add(page.number)
+                    } else {
+                        val child = NioPageFilePage(file, nextChildPageNo)
+
+                        var entryForReplacement = findSmallestEntry(child)
+                        // now delete it from child
+                        delete(child, entryForReplacement, EmptyPageEntry(), changedPages)
+                        if (child.freeSpace() > (PAGESIZE.toInt()) * 2  / 3) {
+                            assert(index > 0)
+                            val prevChildPageNo = pageEntries[index-1].childPageNumber
+                            val leftPage = if (prevChildPageNo == null) null else NioPageFilePage(file, prevChildPageNo)
+                            if (leftPage == null)
+                                throw AssertionError("expected left page to be available for merging")
+
+                            // TODO: do exact calculation of: page fits in predecessor (use freeindexentries)
+
+                            if (leftPage.freeSpace() > (
+                                    PAGESIZE + entryForReplacement.length + leftPage.INDEX_ENTRY_SIZE
+                                            - child.freeSpace())) {
+                                // should fit
+                                leftPage.add(entryForReplacement)
+                                for (e in child.indexEntries()) {
+                                    if (!e.deleted) {
+                                        val entry = unmarshallEntry(child, e)
+                                        if (leftPage.allocationFitsIntoPage(entry.length)) {
+                                            leftPage.add(entry)
+                                            child.remove(e)
+                                        } else {
+                                            throw AssertionError("all should fit into left")
+                                        }
+                                    }
+                                }
+                            }
+                            page.remove(greater.indexEntry)
+                        } else {
+                            entryForReplacement.childPageNumber = greater.childPageNumber
+                            page.remove(greater.indexEntry)
+                            if (!page.allocationFitsIntoPage(entryForReplacement.length))
+                            // TODO: implement if child entry does not fit into inner page during deletion
+                                throw NotImplementedError("TODO: implement if child entry does not fit into inner page during deletion")
+                            page.add(entryForReplacement)
+                            changedPages.add(page.number)
+                        }
+                    }
+                } else {  // remove this value, entry, linkage, ... stay except if merge is necessary
+                    page.remove(greater.indexEntry)
+                    page.add(greater)
+                    changedPages.add(page.number)
+                }
+            } else {
+                throw IndexOutOfBoundsException("value not found associated with key")
+            }
+        }
     }
 
-        fun remove(tx: TXIdentifier, key: NioPageEntry, value: NioPageEntry) {
-        val toDelete = NioBTreeEntry(key, value)
+    private fun findSmallestEntry(child: NioPageFilePage): NioBTreeEntry {
+        val childIndexEntries = child.indexEntries()
+        var e: NioPageFilePage.IndexEntry = getNextValidIndexEntry(childIndexEntries)
+        var entryForReplacement = unmarshallEntry(child, e)
+        if (entryForReplacement.isInnerNode) {
+            assert(childIndexEntries.hasNext())
+            entryForReplacement = unmarshallEntry(child, getNextValidIndexEntry(childIndexEntries))
+        }
+        return entryForReplacement
+    }
 
-        delete(getPrepareRoot(), toDelete, value)
+    private fun getNextValidIndexEntry(childIndexEntries: Iterator<NioPageFilePage.IndexEntry>): NioPageFilePage.IndexEntry {
+        while (childIndexEntries.hasNext()) {
+            val e = childIndexEntries.next()
+            if (!e.deleted)
+                return e
+        }
+
+        throw AssertionError("expecting at least one valid entry")
+    }
+
+    fun remove(tx: TXIdentifier, key: NioPageEntry, value: NioPageEntry) {
+        val changedPages = mutableListOf<Int>()
+
+        delete(getPrepareRoot(), key, value, changedPages)
+        // TODO: handle merging changed Pages if necessary
     }
 
     /*
