@@ -5,6 +5,7 @@ import niopageentries.*
 import niopageobjects.NioPageFile
 import niopageobjects.NioPageFilePage
 import niopageobjects.PAGESIZE
+import java.util.*
 
 
 class NioBTreeEntry(val key: NioPageEntry, val values: ListPageEntry, val indexEntry: NioPageFilePage.IndexEntry?) : NioPageEntry {
@@ -422,9 +423,43 @@ class NioBTree(val file: NioPageFile) {
     fun find(tx: TXIdentifier, entry: NioPageEntry) : Iterator<NioPageEntry> {
 
     }
+    */
 
     fun iterator(tx: TXIdentifier) : Iterator<NioPageEntry> {
 
+        return object : Iterator<NioPageEntry> {
+            val path = Stack<Pair<NioPageFilePage, Int>>()
+            init {
+                val p = Pair(NioPageFilePage(file, root!!.number), 0)
+                path.push(p)
+            }
+
+            override fun hasNext(): Boolean {
+                while (true) {
+                    val top = path.pop()
+                    val entries = getSortedEntries(top.first)
+                    if (top.second < entries.size) {
+                        val act = entries[top.second]
+                        if (act.isInnerNode) {
+
+                        }
+                    } else {
+                        if (path.size == 0)
+                            return false
+                        else {
+                            val parent = path.pop()
+                            path.push(Pair(parent.first, parent.second + 1))
+                        }
+                    }
+                }
+            }
+
+            override fun next(): NioPageEntry {
+                TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+            }
+
+        }
+
     }
-    */
+
 }
