@@ -28,8 +28,8 @@ class NioBTreeEntry(val key: NioPageEntry, val values: ListPageEntry, val indexE
     }
 
     // constructor(key: NioPageEntry) : this(key, null)
-    override val length: Int
-        get() = key.length + values.length + (if (childPageNumber != null) 4 else 0)
+    override val length: Short
+        get() = toShort(key.length + values.length + (if (childPageNumber != null) 4 else 0))
     override val type: NioPageEntryType
         get() = NioPageEntryType.ELSE
 
@@ -65,6 +65,10 @@ class NioBTreeEntry(val key: NioPageEntry, val values: ListPageEntry, val indexE
 
     fun removeValue(value: NioPageEntry) {
         values.a.remove(value)
+    }
+
+    override fun toString(): String {
+        return "NioBTreeEntry(key=$key, indexEntry=$indexEntry, childPageNumber=$childPageNumber)"
     }
 
 }
@@ -166,7 +170,7 @@ class NioBTree(val file: NioPageFile) {
                 pageEntries.add(toInsert)
             else
                 pageEntries.add(toInsertIndex, toInsert)
-            val completeLength = pageEntries.sumBy { it.length } + toInsert.length
+            val completeLength = pageEntries.sumBy { it.length.toInt() } + toInsert.length
             var currentSum = 0
             var splitEntry: NioBTreeEntry? = null
 
@@ -245,7 +249,7 @@ class NioBTree(val file: NioPageFile) {
         }
     }
 
-    private fun delete(page: NioPageFilePage, toDelete: NioPageEntry, value: NioPageEntry, changedPages: MutableList<Int>): Unit {
+    private fun delete(page: NioPageFilePage, toDelete: NioPageEntry, value: NioPageEntry): Unit {
         var pageEntries = getSortedEntries(page)
         val greater = pageEntries.find { it.compareTo(toDelete) >= 0 }
         val index = if (greater == null) pageEntries.size else pageEntries.indexOf(greater)
@@ -256,67 +260,20 @@ class NioBTree(val file: NioPageFile) {
                 throw IndexOutOfBoundsException("entry to be deleted not found in tree")
             }
             val child = NioPageFilePage(file, nextChildPageNo)
-            delete(child, toDelete, value, changedPages)
+            delete(child, toDelete, value)
             if (child.freeSpace() > (PAGESIZE.toInt()) * 2  / 3) {
                 // try to remove child
                 if (index > 1) {
-                    // child is small, try to add it to the left
-                    val prevChildPageNo = pageEntries[index-2].childPageNumber
-                    val leftPage = if (prevChildPageNo == null) null else NioPageFilePage(file, prevChildPageNo)
-                    if (leftPage == null)
-                        throw AssertionError("expected left page to be available for merging")
+                    if (!mergeChildToLeftPage(pageEntries, index, child, page)) {
+                        if (index < pageEntries.size) {
+                            mergeRightToChild(pageEntries, index, child, page)
+                        } else {
 
-                    // TODO: do exact calculation of: page fits in predecessor (use freeindexentries)
-                    // leftPage.compactIndexArea()
-                    // child.compactIndexArea()
-
-                    if (leftPage.freeSpace() > (
-                            PAGESIZE - child.freeSpace())) {
-                        // should fit
-                        for (e in child.indexEntries()) {
-                            if (!e.deleted) {
-                                val entry = unmarshallEntry(child, e)
-                                if (leftPage.allocationFitsIntoPage(entry.length)) {
-                                    leftPage.add(entry)
-                                    child.remove(e)
-                                } else {
-                                    throw AssertionError("all should fit into left")
-                                }
-                            }
                         }
-                        page.remove(pageEntries[index - 1].indexEntry!!)
-                        file.freePage(child)
                     }
-                } else {
-                    // leftmost page is small, try to add everything from the right page
-                    val rightIndexEntry = pageEntries[index].indexEntry
-                    if (rightIndexEntry != null) {
-                        val nextChildPageNo = pageEntries[index].childPageNumber
-                        val rightPage = if (nextChildPageNo == null) null else NioPageFilePage(file, nextChildPageNo)
-                        if (rightPage == null)
-                            throw AssertionError("expected left page to be available for merging")
-                        // TODO: do exact calculation of: page fits in predecessor (use freeindexentries)
-                        // leftPage.compactIndexArea()
-                        // child.compactIndexArea()
-
-                        if (child.freeSpace() > (
-                                PAGESIZE - rightPage.freeSpace())) {
-                            // should fit
-                            for (e in rightPage.indexEntries()) {
-                                if (!e.deleted) {
-                                    val entry = unmarshallEntry(rightPage, e)
-                                    if (child.allocationFitsIntoPage(entry.length)) {
-                                        child.add(entry)
-                                        rightPage.remove(e)
-                                    } else {
-                                        throw AssertionError("all should fit into left")
-                                    }
-                                }
-                            }
-                            page.remove(rightIndexEntry)
-                            // everything can stay as it was since the page, the rightIndexEntry pointed to, has been cleared
-                            file.freePage(rightPage)
-                        }
+                } else if (index < pageEntries.size) {
+                    if (!mergeRightToChild(pageEntries, index, child, page)) {
+                        println("jdsghsdgghagdasg")
                     }
                 }
             }
@@ -330,16 +287,18 @@ class NioBTree(val file: NioPageFile) {
 
             if (greater.values.a.size < orgSize || value is EmptyPageEntry) {
                 if (greater.values.a.size == 0 || value is EmptyPageEntry) {
+                    // entry has been found and can be deleted
                     val nextChildPageNo = pageEntries[index].childPageNumber
                     if (nextChildPageNo == null) {
                         page.remove(greater.indexEntry)
-                        changedPages.add(page.number)
                     } else {
                         val child = NioPageFilePage(file, nextChildPageNo)
 
                         var entryForReplacement = findSmallestEntry(child)
                         // now delete it from child
-                        delete(child, entryForReplacement, EmptyPageEntry(), changedPages)
+                        delete(child, entryForReplacement, EmptyPageEntry())
+                        entryForReplacement.childPageNumber = greater.childPageNumber
+                        page.remove(greater.indexEntry)
                         if (child.freeSpace() > (PAGESIZE.toInt()) * 2  / 3) {
                             assert(index > 0)
                             val prevChildPageNo = pageEntries[index-1].childPageNumber
@@ -351,15 +310,17 @@ class NioBTree(val file: NioPageFile) {
                             // leftPage.compactIndexArea()
                             // child.compactIndexArea()
 
-                            if (leftPage.freeSpace() > (
-                                    PAGESIZE + entryForReplacement.length + leftPage.INDEX_ENTRY_SIZE
-                                            - child.freeSpace())) {
+                            if (leftPage.freeSpace() - entryForReplacement.length - leftPage.INDEX_ENTRY_SIZE > (
+                                    PAGESIZE - child.freeSpace())) {
                                 // should fit
-                                leftPage.add(entryForReplacement)
+                                entryForReplacement.childPageNumber = null  // must be set by inner page, if it is one
+                                println("1merging ${child.number} into $prevChildPageNo")
                                 for (e in child.indexEntries()) {
                                     if (!e.deleted) {
                                         val entry = unmarshallEntry(child, e)
-                                        if (leftPage.allocationFitsIntoPage(entry.length)) {
+                                        if (entry.isInnerNode && entry.key == EmptyPageEntry()) {
+                                            entryForReplacement.childPageNumber = entry.childPageNumber
+                                        } else if (leftPage.allocationFitsIntoPage(entry.length)) {
                                             leftPage.add(entry)
                                             child.remove(e)
                                         } else {
@@ -367,23 +328,25 @@ class NioBTree(val file: NioPageFile) {
                                         }
                                     }
                                 }
+                                leftPage.add(entryForReplacement)
+                                file.freePage(child)
+                            } else {
+                                if (!page.allocationFitsIntoPage(entryForReplacement.length))
+                                // TODO: implement if child entry does not fit into inner page during deletion
+                                    throw NotImplementedError("TODO: implement if child entry does not fit into inner page during deletion")
+                                page.add(entryForReplacement)
                             }
-                            page.remove(greater.indexEntry)
-                            file.freePage(child)
+
                         } else {
-                            entryForReplacement.childPageNumber = greater.childPageNumber
-                            page.remove(greater.indexEntry)
                             if (!page.allocationFitsIntoPage(entryForReplacement.length))
                             // TODO: implement if child entry does not fit into inner page during deletion
                                 throw NotImplementedError("TODO: implement if child entry does not fit into inner page during deletion")
                             page.add(entryForReplacement)
-                            changedPages.add(page.number)
                         }
                     }
                 } else {  // remove this value, entry, linkage, ... stay except if merge is necessary
                     page.remove(greater.indexEntry)
                     page.add(greater)
-                    changedPages.add(page.number)
                 }
             } else {
                 throw IndexOutOfBoundsException("value not found associated with key")
@@ -391,15 +354,93 @@ class NioBTree(val file: NioPageFile) {
         }
     }
 
-    private fun findSmallestEntry(child: NioPageFilePage): NioBTreeEntry {
-        val childIndexEntries = child.indexEntries()
-        var e: NioPageFilePage.IndexEntry = getNextValidIndexEntry(childIndexEntries)
-        var entryForReplacement = unmarshallEntry(child, e)
-        if (entryForReplacement.isInnerNode) {
-            assert(childIndexEntries.hasNext())
-            entryForReplacement = unmarshallEntry(child, getNextValidIndexEntry(childIndexEntries))
+    private fun mergeChildToLeftPage(pageEntries: MutableList<NioBTreeEntry>, index: Int, child: NioPageFilePage, page: NioPageFilePage): Boolean {
+        val rightEntry = pageEntries[index - 1]
+        // child is small, try to add it to the left
+        val prevChildPageNo = pageEntries[index - 2].childPageNumber
+        if (prevChildPageNo == null)
+            throw AssertionError("expected left page to be available for merging")
+        val leftPage = NioPageFilePage(file, prevChildPageNo)
+
+        // TODO: do exact calculation of: page fits in predecessor (use freeindexentries)
+        leftPage.compactIndexArea()
+        child.compactIndexArea()
+
+        if (leftPage.freeSpace() - rightEntry.length - leftPage.INDEX_ENTRY_SIZE >
+                (PAGESIZE - child.freeSpace())) {
+            rightEntry.childPageNumber = null
+            println("2merging ${child.number} into $prevChildPageNo")
+            for (e in child.indexEntries()) {
+                if (!e.deleted) {
+                    val entry = unmarshallEntry(child, e)
+                    if (entry.isInnerNode && entry.key == EmptyPageEntry()) {
+                        rightEntry.childPageNumber = entry.childPageNumber
+                    } else if (leftPage.allocationFitsIntoPage(entry.length)) {
+                        leftPage.add(entry)
+                        child.remove(e)
+                    } else {
+                        throw AssertionError("all should fit into left")
+                    }
+                }
+            }
+            leftPage.add(rightEntry)
+            page.remove(rightEntry.indexEntry!!)
+            file.freePage(child)
+            return true
+        } else {
+            return false
         }
-        return entryForReplacement
+    }
+
+    private fun mergeRightToChild(pageEntries: MutableList<NioBTreeEntry>, index: Int, child: NioPageFilePage, page: NioPageFilePage): Boolean {
+        val rightEntry = pageEntries[index]
+        // leftmost page is small, try to add everything from the right page
+        val rightIndexEntry = rightEntry.indexEntry
+        if (rightIndexEntry != null) {
+            val nextChildPageNo = rightEntry.childPageNumber
+            val rightPage = if (nextChildPageNo == null) null else NioPageFilePage(file, nextChildPageNo)
+            if (rightPage == null)
+                throw AssertionError("expected left page to be available for merging")
+            // TODO: do exact calculation of: page fits in predecessor (use freeindexentries)
+            rightPage.compactIndexArea()
+            child.compactIndexArea()
+
+            if (child.freeSpace() - rightEntry.length - child.INDEX_ENTRY_SIZE >
+                    (PAGESIZE - rightPage.freeSpace())) {
+                rightEntry.childPageNumber = null
+                println("3merging $nextChildPageNo into ${child.number}")
+                // should fit
+                for (e in rightPage.indexEntries()) {
+                    if (!e.deleted) {
+                        val entry = unmarshallEntry(rightPage, e)
+                        if (entry.isInnerNode && entry.key == EmptyPageEntry()) {
+                            rightEntry.childPageNumber = entry.childPageNumber
+                        } else if (child.allocationFitsIntoPage(entry.length)) {
+                            child.add(entry)
+                            rightPage.remove(e)
+                        } else {
+                            throw AssertionError("all should fit into left")
+                        }
+                    }
+                }
+                child.add(rightEntry)
+                page.remove(rightIndexEntry)
+                // everything can stay as it was since the page, the rightIndexEntry pointed to, has been cleared
+                file.freePage(rightPage)
+                return true
+            }
+        }
+        return false
+    }
+
+
+    private fun findSmallestEntry(child: NioPageFilePage): NioBTreeEntry {
+        var entries = getSortedEntries(child)
+        val childPageNumber = entries[0].childPageNumber
+        if (childPageNumber != null)
+            return findSmallestEntry(NioPageFilePage(file, childPageNumber))
+        else
+            return entries[0]
     }
 
     private fun getNextValidIndexEntry(childIndexEntries: Iterator<NioPageFilePage.IndexEntry>): NioPageFilePage.IndexEntry {
@@ -413,10 +454,7 @@ class NioBTree(val file: NioPageFile) {
     }
 
     fun remove(tx: TXIdentifier, key: NioPageEntry, value: NioPageEntry) {
-        val changedPages = mutableListOf<Int>()
-
-        delete(getPrepareRoot(), key, value, changedPages)
-        // TODO: handle merging changed Pages if necessary
+        delete(getPrepareRoot(), key, value)
     }
 
     /*
@@ -440,11 +478,19 @@ class NioBTree(val file: NioPageFile) {
                     val entries = getSortedEntries(top.first)
                     if (top.second < entries.size) {
                         val act = entries[top.second]
-                        if (act.isInnerNode) {
 
+                        val childPageNumber = act.childPageNumber
+                        if (childPageNumber != null && top.second == 0) {
+                            val child = NioPageFilePage(file, childPageNumber)
+                            path.push(top)  // restore parent
+                            path.push(Pair(child, 0))
+                        } else {
+                            path.push(top)
+                            return true
                         }
                     } else {
                         if (path.size == 0)
+                            // reached the top where nothing is left
                             return false
                         else {
                             val parent = path.pop()
@@ -455,7 +501,22 @@ class NioBTree(val file: NioPageFile) {
             }
 
             override fun next(): NioPageEntry {
-                TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+                if (hasNext()) {
+                    val top = path.pop()
+                    val entries = getSortedEntries(top.first)
+                    val result = entries[top.second]
+                    val childPageNumber = result.childPageNumber
+                    if (childPageNumber != null) {
+                        val child = NioPageFilePage(file, childPageNumber)
+                        path.push(top)
+                        path.push(Pair(child, 0))
+                    } else {
+                        path.push(Pair(top.first, top.second + 1))
+                    }
+                    return result
+                } else {
+                    throw IndexOutOfBoundsException("BTree Iterator, next called but nothing left")
+                }
             }
 
         }

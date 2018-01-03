@@ -2,7 +2,7 @@ package niopagestore
 
 import junit.framework.Assert.assertFalse
 import junit.framework.Assert.assertTrue
-import niopageentries.DoublePageEntry
+import niopageentries.*
 import niopageobjects.NioPageFile
 import niopageobjects.NioPageFilePage
 import niopageobjects.NioPageIndexEntry
@@ -12,6 +12,7 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.io.RandomAccessFile
+import java.util.*
 
 class NioPageFileTest {
     private var file: NioPageFile? = null
@@ -246,5 +247,97 @@ class NioPageFileTest {
     fun canAllocateAndRemoveAllEntriesInSecondPage() {
         file!!.newPage()
         canAllocateAndRemoveAllEntriesInPage()
+    }
+
+    @Test
+    fun canStoreReadAndDeleteOneEntryInPage() {
+        val page = file!!.newPage()
+        createTestEntries().shuffled().forEach { writeReadInPageCheck(page, it) }
+    }
+
+    @Test
+    fun canMoveOneEntryInPage() {
+        val page = file!!.newPage()
+        val dest = file!!.newPage()
+        val testEntries = createTestEntries()
+        testEntries.shuffled().forEach {
+            val idx1 = page.add(it)
+        }
+        assertTrue(page.countEntries() == testEntries.size)
+        assertTrue(dest.countEntries() == 0)
+        println("checking original page")
+        page.entries().asSequence().toList().sortedBy { it.entryOffset }.forEach {
+            println("entry: $it")
+            val entry = unmarshalFrom(file!!, it)
+            println("entry: $entry")
+            assertTrue("original contains: $entry", testEntries.contains(entry))
+            dest.add(entry)
+            page.remove(it)
+        }
+        assertTrue(dest.countEntries() == testEntries.size)
+        assertTrue(page.countEntries() == 0)
+        println("checking copied page")
+        dest.entries().asSequence().toList().forEach {
+            println("entry: $it")
+            val entry = unmarshalFrom(file!!, it)
+            println("entry: $entry")
+            assertTrue("destination contains: $entry", testEntries.contains(entry))
+            page.add(entry)
+            dest.remove(it)
+        }
+        assertTrue("${page.countEntries()} != ${testEntries.size}",page.countEntries() == testEntries.size)
+        assertTrue(dest.countEntries() == 0)
+        println("checking original restored page")
+        page.entries().asSequence().toList().forEach {
+            println("entry: $it")
+            val entry = unmarshalFrom(file!!, it)
+            println("entry: $entry")
+            assertTrue("original once more contains: $entry", testEntries.contains(entry))
+            page.remove(it)
+        }
+        assertTrue(page.countEntries() == 0)
+        assertTrue(dest.countEntries() == 0)
+    }
+
+
+    private fun createTestEntries(): MutableList<NioPageEntry> {
+        val testEntries = mutableListOf(
+                BytePageEntry(11),
+                ShortPageEntry(-23),
+                IntPageEntry(-1111112222),
+                LongPageEntry(-0x7F1188AA11223344),
+                FloatPageEntry(1.11E20F),
+                DoublePageEntry(1.1347236747E10),
+                CharPageEntry('a'),
+                CharPageEntry('ä'),
+                CharPageEntry('ß'),
+                StringPageEntry("teststring"),
+                ByteArrayPageEntry(ByteArray(100))
+        )
+        testEntries.add(ListPageEntry(testEntries))
+        return testEntries
+    }
+
+    private fun writeReadInPageCheck(page: NioPageFilePage, entry: NioPageEntry) {
+        val idx1 = page.add(entry)
+        val read = unmarshalFrom(file!!, page.offset(idx1))
+        page.remove(idx1)
+        assertTrue("entry: $entry, read: $read",entry == read)
+    }
+
+    @Test
+    fun canAllocateAndMoveTwoEntriesInPage() {
+        val page = file!!.newPage()
+
+        val e = DoublePageEntry(1.111)
+        assertTrue (page.allocationFitsIntoPage(e.length))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 3))
+        val idx1 = page.add(e)
+        idx1.validate(page)
+        val idx2 = page.add(e)
+        idx2.validate(page)
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - page.END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - page.END_OF_HEADER - 3))
     }
 }

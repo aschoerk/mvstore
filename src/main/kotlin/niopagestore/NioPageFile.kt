@@ -93,6 +93,11 @@ class NioPageIndexEntry(val entryOffset: Long) {
         return entryOffset.hashCode()
     }
 
+    override fun toString(): String {
+        return "NioPageIndexEntry(offset=0x${entryOffset.toString(16)})"
+    }
+
+
 }
 
 
@@ -123,16 +128,21 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
 
     class IndexEntry(val idx: Short, var offs: Int, var len: Int, var deleted: Boolean, var canBeReused: Boolean) {
         constructor(idx: Short, offs: Int, len: Int, deleted: Boolean) : this(idx, offs, len, deleted, false)
+
         constructor(idx: Short, elementIndexValue: Int)
                 : this(idx,
                 elementIndexValue ushr 17,
                 elementIndexValue and 0x7FFF,
                 elementIndexValue and 0x8000 != 0,
                 elementIndexValue and 0x10000 != 0)
+
         constructor(page: NioPageFilePage, offset: Long)
                 : this(((offset - page.END_OF_HEADER - page.offset) / page.INDEX_ENTRY_SIZE).toShort(), page.file.getInt(offset))
+
         constructor(page: NioPageFilePage, idx: Short)
                 : this(idx, page.file.getInt(page.offset + page.END_OF_HEADER + idx * page.INDEX_ENTRY_SIZE))
+
+        constructor(page: NioPageFilePage, entry: NioPageIndexEntry) : this(page, entry.entryOffset)
 
         val value
             get() =(offs shl 17) or len or (if (deleted) 0x8000 else 0x0000) or (if (canBeReused) 0x10000 else 0x00000)
@@ -142,6 +152,11 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
         }
 
         fun offsetInFile(page: NioPageFilePage) = offs + page.offset
+
+        override fun toString(): String {
+            return "IndexEntry(idx=$idx, offs=$offs, len=$len, deleted=$deleted, canBeReused=$canBeReused)"
+        }
+
 
     }
 
@@ -166,6 +181,12 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
 
             }
         }
+    }
+
+    fun countEntries() : Int {
+        var result = 0
+        entries().forEach { result++ }
+        return result
     }
 
     fun entries() : Iterator<NioPageIndexEntry> {
@@ -193,9 +214,11 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
         }
     }
 
+    fun offset(entry: NioPageIndexEntry) = IndexEntry(this, entry).offsetInFile(this)
+
 
     // allocate space in the page if possible
-    private fun allocate(length: Int): IndexEntry {
+    private fun allocate(length: Short): IndexEntry {
         var proposedOffset = newBeginOfPayloadArea(length)
         if (!enoughContinousFreespace(length)) {
             var toMove = compactPayloadArea()
@@ -206,7 +229,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
             val currentAfterElementIndexPos = afterElementIndexPos
             assert(proposedOffset >= currentAfterElementIndexPos + 4)
             // maintain header information
-            val result = IndexEntry(((currentAfterElementIndexPos - END_OF_HEADER) / INDEX_ENTRY_SIZE).toShort(), proposedOffset, length, false)
+            val result = IndexEntry(((currentAfterElementIndexPos - END_OF_HEADER) / INDEX_ENTRY_SIZE).toShort(), proposedOffset, length.toInt(), false)
             file.setInt(offset + AFTER_ELEMENT_INDEX, currentAfterElementIndexPos + INDEX_ENTRY_SIZE)  // make element index 1 entry longer
             file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, proposedOffset)        // pre allocate space below the other allocated space
             // maintain index
@@ -221,8 +244,9 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
                     file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, proposedOffset)        // pre allocate space below the other allocated space
                     // maintain index
                     e.offs = proposedOffset
-                    e.len = length
+                    e.len = length.toInt()
                     e.deleted = false
+                    e.canBeReused = false
                     e.setInPage(this)
                     addToFreeSpace(-length)  // entry is reused so it does not count into freespace
                     return e;
@@ -240,7 +264,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
     fun compactIndexArea() {
         val entries = mutableListOf<IndexEntry>();
         indexEntries().forEach {
-            if (it.deleted && it.offs != 0)
+            if (it.deleted && !it.canBeReused)
                 throw AssertionError(" can't compact index on fixed page")
             entries.add(it)
         }
@@ -279,15 +303,17 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
         return toMove
     }
 
-    private fun enoughContinousFreespace(length: Int) =
+    private fun enoughContinousFreespace(length: Short) =
             newBeginOfPayloadArea(length) >= afterElementIndexPos + INDEX_ENTRY_SIZE
 
     private val afterElementIndexPos
         get() = file.getInt(offset + AFTER_ELEMENT_INDEX)
 
-    private fun newBeginOfPayloadArea(length: Int) = file.getInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX) - length
+    private fun newBeginOfPayloadArea(length: Short) = file.getInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX) - length
 
-    public fun allocationFitsIntoPage(length: Int) =
+    public fun allocationFitsIntoPage(length: Int) = allocationFitsIntoPage(length.toShort())
+
+    public fun allocationFitsIntoPage(length: Short) =
             freeSpace() >=
                     length +
                         if (file.getShort(offset + FREE_ENTRY_INDEX) > 0)
