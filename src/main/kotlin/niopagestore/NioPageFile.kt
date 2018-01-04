@@ -7,6 +7,7 @@ package niopageobjects
 import niopageentries.NioPageEntry
 import niopagestore.MMapper
 import org.agrona.concurrent.MappedResizeableBuffer
+import kotlin.experimental.and
 
 open class NioBufferWithOffset(val b: MappedResizeableBuffer, val offset: Long) {
     constructor(b: NioBufferWithOffset)
@@ -67,13 +68,13 @@ class NioPageIndexEntry(val entryOffset: Long) {
             throw IndexOutOfBoundsException("trying to use entry not in this page")
     }
 
-    public fun isValid(page: NioPageFilePage): Boolean {
+    fun isValid(page: NioPageFilePage): Boolean {
         val indexPtrOc = (entryOffset - page.offset >= page.END_OF_HEADER
                 && entryOffset - page.offset < page.file.getInt(page.offset + page.AFTER_ELEMENT_INDEX)
                 || (entryOffset - page.END_OF_HEADER) % page.INDEX_ENTRY_SIZE == 0L)
         if (indexPtrOc) {
             val indexEntry = NioPageFilePage.IndexEntry(page, entryOffset)
-            return indexEntry.offs < PAGESIZE && indexEntry.offs + indexEntry.len <= PAGESIZE;
+            return indexEntry.offs < PAGESIZE && indexEntry.offs + indexEntry.len <= PAGESIZE
         }
         return false
     }
@@ -102,13 +103,17 @@ class NioPageIndexEntry(val entryOffset: Long) {
 
 
 class NioPageFilePage(val file: NioPageFile, val offset: Long) {
+    init {
+        val pageNumber = (offset / PAGESIZE).toInt()
+        assert(file.freeMap.findDescription(pageNumber).getUsed(pageNumber), {"trying to create already freed page"})
+    }
     constructor(file: NioPageFile, number: Int) : this(file, number.toLong() * PAGESIZE)
     val number
         get() = (offset / PAGESIZE).toInt()
     val END_OF_HEADER = 24          // size of the header information
     val FLAGS_INDEX = 2             // flags about the page bit 30 is always set
     val FREE_ENTRY_INDEX = 0
-    val FREE_SPACE_INDEX = 4        // stores the amount of freespace in this page, be aware,
+    val FREE_SPACE_INDEX = 4        // stores the amount of freespace in this pages payload area, be aware,
     // that for each element allocation a 4 Byte index entry is necessary.
     val AFTER_ELEMENT_INDEX = 8     // stores the entryOffset, where the element-index ends
     val BEGIN_OF_PAYLOAD_POS_INDEX = 12  // stores the beginning of the payload
@@ -117,6 +122,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
 
     init {
         if (file.getInt(offset) == 0) {
+            // automatically initialize when coming from freespace
             file.setShort(offset + FLAGS_INDEX, 0x4000)
             file.setShort(offset + FREE_ENTRY_INDEX, 0)
             file.setInt(offset + FREE_SPACE_INDEX, PAGESIZE.toInt() - END_OF_HEADER)
@@ -126,7 +132,12 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
         }
     }
 
-    class IndexEntry(val idx: Short, var offs: Int, var len: Int, var deleted: Boolean, var canBeReused: Boolean) {
+    class IndexEntry(val idx: Short,
+                     var offs: Int, // offset relativ to page begin
+                     var len: Int,  // length of entry if deleted: if <> 0 then space has not been claimed by compaction yet
+                     var deleted: Boolean, // entry is deleted, but entry might yet be used as address
+                     var canBeReused: Boolean  // entry is deleted and client allows that entry may be reused
+    ) {
         constructor(idx: Short, offs: Int, len: Int, deleted: Boolean) : this(idx, offs, len, deleted, false)
 
         constructor(idx: Short, elementIndexValue: Int)
@@ -195,7 +206,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
 
             override fun hasNext(): Boolean {
                 while (current < (file.getInt(offset + AFTER_ELEMENT_INDEX) - END_OF_HEADER) / INDEX_ENTRY_SIZE
-                    && getIndexEntry(current).deleted) current++;
+                    && getIndexEntry(current).deleted) current++
 
                 return current < (file.getInt(offset + AFTER_ELEMENT_INDEX) - END_OF_HEADER) / INDEX_ENTRY_SIZE
             }
@@ -216,45 +227,111 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
 
     fun offset(entry: NioPageIndexEntry) = IndexEntry(this, entry).offsetInFile(this)
 
+    fun checkDataPage() : String {
+        val result = StringBuffer()
+        if (!file.freeMap.findDescription(number).getUsed(number)) {
+            result.append("page($number): expected to be used\n")
+        }
+        if ((file.getShort(offset +2) and 0x4000) == 0.toShort()) {
+            result.append("page($number): expected 0x4000 at offset 2\n")
+        }
+        val beginOfPayload = file.getInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX)
+        val freeEntries = getReusableIndexEntries()
+        val afterElementOffset = file.getInt(offset + AFTER_ELEMENT_INDEX)
+        val freeSpace = file.getInt(offset + FREE_SPACE_INDEX)
+        var actualFreeSpace = beginOfPayload - afterElementOffset
+        var actualFreeEntries = 0
+        val indexEntries = mutableListOf<IndexEntry>()
+        var index = 0.toShort()
+        for (i in (this.END_OF_HEADER..afterElementOffset - 4) step 4) {
+            val currentValue = file.getInt(offset + i)
+            val indexEntry = IndexEntry(index++, currentValue)
+            indexEntries.add(indexEntry)
+            if (indexEntry.canBeReused)
+                actualFreeEntries++
+            if (indexEntry.deleted) {
+                actualFreeSpace += indexEntry.len
+            }
+            if (indexEntry.canBeReused != indexEntry.deleted) {
+                result.append("page($number): at moment expect to equal canbeReused and Deleted: $indexEntry\n")
+            }
+            if (indexEntry.len != 0 && (indexEntry.offs < beginOfPayload || indexEntry.offs > PAGESIZE)) {
+                result.append("page($number): invalid offset in indexEntry: $indexEntry\n")
+            } else {
+                if (indexEntry.len < 0) {
+                    result.append("page($number): invalid len < 0 in indexEntry: $indexEntry\n")
+                } else if (indexEntry.offs != 0 && indexEntry.offs + indexEntry.len  > PAGESIZE) {
+                    result.append("page($number): invalid len in indexEntry: $indexEntry\n")
+                }
+            }
+        }
+        if (actualFreeSpace != freeSpace) {
+            result.append("page($number): thinks it has $freeSpace, but only $actualFreeSpace left\n")
+        }
+        if (actualFreeEntries != freeEntries.toInt()) {
+            result.append("page($number): thinks it has $freeEntries free Entries, but only $actualFreeEntries left\n")
+        }
+        indexEntries.sortBy { -it.offs }
+        var lastOffset = PAGESIZE.toInt()
+        for (e in indexEntries) {
+            if (e.offs != 0 && e.len != 0) {
+                if (e.offs + e.len > lastOffset) {
+                    result.append("page($number): invalid len in indexEntry: $e > $lastOffset\n")
+                }
+                lastOffset = e.offs
+            }
+        }
+        return result.toString()
+    }
 
     // allocate space in the page if possible
     private fun allocate(length: Short): IndexEntry {
-        var proposedOffset = newBeginOfPayloadArea(length)
-        if (!enoughContinousFreespace(length)) {
-            var toMove = compactPayloadArea()
-            proposedOffset += toMove  // now can move fault position into payload area
-            file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, proposedOffset)
+        if (!enoughContinousFreespace((length + if (getReusableIndexEntries() > 0) 0 else INDEX_ENTRY_SIZE).toShort())) {
+            compactPayloadArea()
         }
-        if (file.getShort(offset + FREE_ENTRY_INDEX) == 0.toShort()) {
-            val currentAfterElementIndexPos = afterElementIndexPos
-            assert(proposedOffset >= currentAfterElementIndexPos + 4)
-            // maintain header information
-            val result = IndexEntry(((currentAfterElementIndexPos - END_OF_HEADER) / INDEX_ENTRY_SIZE).toShort(), proposedOffset, length.toInt(), false)
-            file.setInt(offset + AFTER_ELEMENT_INDEX, currentAfterElementIndexPos + INDEX_ENTRY_SIZE)  // make element index 1 entry longer
-            file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, proposedOffset)        // pre allocate space below the other allocated space
-            // maintain index
-            result.setInPage(this)
-            addToFreeSpace(-length-INDEX_ENTRY_SIZE)  // need to remove index_entry_size as well because of lengthening of indexentrytable
-            return result
+        val proposedOffset = newBeginOfPayloadArea(length)
+        if (getReusableIndexEntries() == 0.toShort()) {
+            return allocateWithNewIndexEntry(proposedOffset, length)
         } else {
-            assert(file.getShort(offset + FREE_ENTRY_INDEX) > 0)
-            file.setShort(offset + FREE_ENTRY_INDEX ,(file.getShort(offset + FREE_ENTRY_INDEX) - 1).toShort())
-            for (e in indexEntries()) {
-                if (e.canBeReused) {
-                    file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, proposedOffset)        // pre allocate space below the other allocated space
-                    // maintain index
-                    e.offs = proposedOffset
-                    e.len = length.toInt()
-                    e.deleted = false
-                    e.canBeReused = false
-                    e.setInPage(this)
-                    addToFreeSpace(-length)  // entry is reused so it does not count into freespace
-                    return e;
-                }
-            }
-            throw AssertionError("Expected free index entry to be found")
+            val result = allocateAndReuseIndexEntry(proposedOffset, length)
+            if (result == null)
+                return allocateWithNewIndexEntry(proposedOffset, length)
+            else
+                return result
         }
 
+    }
+
+    private fun allocateAndReuseIndexEntry(proposedOffset: Int, length: Short): IndexEntry? {
+        assert(getReusableIndexEntries() > 0)
+        for (e in indexEntries()) {
+            if (e.canBeReused && e.len == 0) {
+                file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, proposedOffset)        // pre allocate space below the other allocated space
+                // maintain index
+                e.offs = proposedOffset
+                e.len = length.toInt()
+                e.deleted = false
+                e.canBeReused = false
+                e.setInPage(this)
+                decReusableIndexEntries()
+                addToFreeSpace(-length)  // entry is reused so it does not count into freespace
+                return e
+            }
+        }
+        return null
+    }
+
+    private fun allocateWithNewIndexEntry(proposedOffset: Int, length: Short): IndexEntry {
+        val currentAfterElementIndexPos = afterElementIndexPos
+        assert(proposedOffset >= currentAfterElementIndexPos + 4, { "proposedOffset: $proposedOffset >= ${currentAfterElementIndexPos + 4}" })
+        // maintain header information
+        val result = IndexEntry(((currentAfterElementIndexPos - END_OF_HEADER) / INDEX_ENTRY_SIZE).toShort(), proposedOffset, length.toInt(), false)
+        file.setInt(offset + AFTER_ELEMENT_INDEX, currentAfterElementIndexPos + INDEX_ENTRY_SIZE)  // make element index 1 entry longer
+        file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, proposedOffset)        // pre allocate space below the other allocated space
+        addToFreeSpace(-length - INDEX_ENTRY_SIZE)  // need to remove index_entry_size as well because of lengthening of indexentrytable
+        // maintain index
+        result.setInPage(this)
+        return result
     }
 
     private fun addToFreeSpace(length: Int) {
@@ -262,7 +339,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
     }
 
     fun compactIndexArea() {
-        val entries = mutableListOf<IndexEntry>();
+        val entries = mutableListOf<IndexEntry>()
         indexEntries().forEach {
             if (it.deleted && !it.canBeReused)
                 throw AssertionError(" can't compact index on fixed page")
@@ -270,20 +347,20 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
         }
         var indexOffset = END_OF_HEADER
         for (e in entries) {
-            if (!e.deleted || e.offs != 0) {
+            if (!e.deleted || e.len != 0) {
                 file.setInt(offset + indexOffset, e.value)
                 indexOffset += INDEX_ENTRY_SIZE
             } else {
+                decReusableIndexEntries()
                 addToFreeSpace(INDEX_ENTRY_SIZE)
             }
         }
         file.setInt(offset + AFTER_ELEMENT_INDEX, indexOffset)
-        file.setShort(offset + FREE_ENTRY_INDEX ,0.toShort())
     }
 
-    private fun compactPayloadArea(): Int {
+    private fun compactPayloadArea() {
         var toMove = 0
-        val entries = mutableListOf<IndexEntry>();
+        val entries = mutableListOf<IndexEntry>()
         indexEntries().forEach { if (it.len > 0) entries.add(it) }
         entries.sortBy { -it.offs }
 
@@ -300,7 +377,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
                 }
             }
         }
-        return toMove
+        file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, file.getInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX) + toMove)
     }
 
     private fun enoughContinousFreespace(length: Short) =
@@ -311,18 +388,19 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
 
     private fun newBeginOfPayloadArea(length: Short) = file.getInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX) - length
 
-    public fun allocationFitsIntoPage(length: Int) = allocationFitsIntoPage(length.toShort())
+    fun allocationFitsIntoPage(length: Int) = allocationFitsIntoPage(length.toShort())
 
-    public fun allocationFitsIntoPage(length: Short) =
+    fun allocationFitsIntoPage(length: Short) =
             freeSpace() >=
                     length +
-                        if (file.getShort(offset + FREE_ENTRY_INDEX) > 0)
+                        if (getReusableIndexEntries() > 0)
                             0
-                        else INDEX_ENTRY_SIZE;
+                        else INDEX_ENTRY_SIZE
 
     fun freeSpace() = file.getInt(offset + FREE_SPACE_INDEX)
 
-    public fun add(entry: NioPageEntry): NioPageIndexEntry {
+    fun add(entry: NioPageEntry): NioPageIndexEntry {
+        println("adding $entry to $number")
         if (!allocationFitsIntoPage(entry.length))
             throw IndexOutOfBoundsException("can't add new entry in this page")
         val indexEntry = allocate(entry.length)
@@ -332,7 +410,8 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
         return NioPageIndexEntry(offset + END_OF_HEADER + indexEntry.idx * INDEX_ENTRY_SIZE)
     }
 
-    public fun delete(entry: NioPageIndexEntry): Unit {
+    fun removeButKeepIndexEntry(entry: NioPageIndexEntry): Unit {
+        println("setting $entry in $number deleted")
         val entry = IndexEntry(this, entry.entryOffset)
         if (entry.offs == 0)
             throw IndexOutOfBoundsException("entry to be deleted is already removed")
@@ -343,27 +422,51 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
         addToFreeSpace(entry.len)
     }
 
-    public fun remove(entry: NioPageIndexEntry): Unit {
+    fun remove(entry: NioPageIndexEntry): Unit {
         val entry = IndexEntry(this, entry.entryOffset)
         remove(entry)
     }
 
     fun remove(entry: IndexEntry) {
+        println("removing $entry from $number")
         if (entry.offs == 0)
             throw IndexOutOfBoundsException("entry to be removed is already")
-        if (!entry.deleted) {
-            addToFreeSpace(entry.len)
-            entry.deleted = true
+        if (entry.deleted)
+            throw IndexOutOfBoundsException("entry to be deleted is already")
+        for (e in indexEntries()) {
+            if (e.offs == entry.offs && !e.deleted) {
+                assert(e.idx == entry.idx)
+                break
+            }
         }
+        addToFreeSpace(entry.len)
+        entry.deleted = true
         entry.canBeReused = true // means: can be reused
-        file.setShort(offset + FREE_ENTRY_INDEX, (file.getShort(offset + FREE_ENTRY_INDEX) + 1).toShort())
+        incReusableIndexEntries()
         entry.setInPage(this)
     }
+
+    fun empty() : Boolean = indexEntries().asSequence().fold(true) { isEmpty, element -> isEmpty && element.deleted }
+
+
+    private fun clrReusableIndexEntries() {
+        file.setShort(offset + FREE_ENTRY_INDEX, 0)
+    }
+
+    private fun decReusableIndexEntries() {
+        file.setShort(offset + FREE_ENTRY_INDEX, (getReusableIndexEntries() - 1).toShort())
+    }
+
+    private fun incReusableIndexEntries() {
+        file.setShort(offset + FREE_ENTRY_INDEX, (getReusableIndexEntries() + 1).toShort())
+    }
+
+    private fun getReusableIndexEntries() = file.getShort(offset + FREE_ENTRY_INDEX)
 
 
     operator override fun equals(other: Any?): Boolean {
         if (super.equals(other))
-            return true;
+            return true
         return other is NioPageFilePage && other.file == file && other.offset == offset
     }
 
@@ -412,25 +515,25 @@ class FreeSpace(val file: NioPageFile) {
                                val offset: Long   // start of managed Space
     ) {
         // number of pages managed by this FreespaceDescription
-        val pagesCovered
-            get() = minOf(file.length / PAGESIZE, (file.getInt(offset + 1) * PAGESIZE * 8).toLong())
+        val pagesCovered: Int
+            get() = minOf(file.length / PAGESIZE, (file.getInt(offset + 1) * PAGESIZE * 8)).toInt()
         // support linking of freespace areas using this pointer
-        val nextFreeSpaceOffset
+        val nextFreeSpaceOffset: Long
             get() = file.getLong(offset + 8)
         // number of pages used from file by this FreespaceDescription
-        val pagesUsed
-            get() = (pagesCovered + START_OF_MAP * 8L) / (PAGESIZE * 8)
-        val firstOffset
+        val pagesUsed: Int
+            get() = ((pagesCovered + START_OF_MAP * 8L) / (PAGESIZE * 8)).toInt()
+        val firstOffset: Long
             get() = offset
-        val behindFreespaceOffset
-            get() = offset + pagesCovered * 8192
-        val firstPageManaged
-            get() = offset / PAGESIZE
+        val behindFreespaceOffset: Long
+            get() = offset + pagesCovered * PAGESIZE
+        val firstPageManaged: Int
+            get() = (offset / PAGESIZE).toInt()
 
-        val managementPages
-            get() = (nextFreeSpaceOffset - offset) / (8192 * 8)
+        val managementPages: Int
+            get() = ((nextFreeSpaceOffset - offset) / (PAGESIZE * 8)).toInt()
 
-        fun set(usedPage: Long, usedOrNot: Boolean) {
+        fun set(usedPage: Int, usedOrNot: Boolean) {
             val pageNumInFreeSpace = (usedPage * PAGESIZE - offset) / PAGESIZE
             if (pageNumInFreeSpace < 0 || pageNumInFreeSpace > pagesCovered)
                 throw IndexOutOfBoundsException("trying to figure out freespace")
@@ -444,10 +547,21 @@ class FreeSpace(val file: NioPageFile) {
             file.setByte(byteOffsetInMap + offset, (b xor bit).toByte())
         }
 
+        fun getUsed(usedPage: Int) : Boolean {
+            val pageNumInFreeSpace = (usedPage * PAGESIZE - offset) / PAGESIZE
+            if (pageNumInFreeSpace < 0 || pageNumInFreeSpace > pagesCovered)
+                throw IndexOutOfBoundsException("trying to figure out freespace")
+            val byteOffsetInMap = pageNumInFreeSpace / 8 + START_OF_MAP
+            val bitPos = pageNumInFreeSpace % 8
+            val bit: Int = (1 shl bitPos.toInt())
+            val b: Int = file.getByte(byteOffsetInMap + offset).toInt()
+            return bit and b != 0
+        }
+
         enum class PAGEINFO { FREE, ALLOCATED, FREESPACE }
 
         // page is pagenumber in file
-        fun pageInfo(page: Long): PAGEINFO {
+        fun pageInfo(page: Int): PAGEINFO {
             val pageNumInFreeSpace = (page * PAGESIZE - offset) / PAGESIZE
             if (pageNumInFreeSpace < 0 || pageNumInFreeSpace > pagesCovered)
                 throw IndexOutOfBoundsException("trying to figure out freespace")
@@ -476,7 +590,8 @@ class FreeSpace(val file: NioPageFile) {
                     for (i in 0..31) {
                         if (content and mask == 0) {
                             val pageNumber = (bp - START_OF_MAP) * 8 + i + firstPageManaged
-                            set(pageNumber, true)
+                            assert (pageNumber <= Int.MAX_VALUE)
+                            set(pageNumber.toInt(), true)
                             return pageNumber * PAGESIZE
                         }
                         mask = mask shl 1
@@ -486,13 +601,14 @@ class FreeSpace(val file: NioPageFile) {
             }
             return 0L
         }
+
     }
 
     private val freespaceDescriptions: MutableList<FreespaceDescription> = mutableListOf()
 
     init {
         if (file.getInt(file.FREESPACE_OFFSET) != FREEMAP_MAGIC) synchronized(file) {
-            val freespaceOffset = file.FREESPACE_OFFSET.toLong()
+            val freespaceOffset = file.FREESPACE_OFFSET
             freespaceDescriptions.add(initNextFreeSpace(freespaceOffset, file.length))
         } else {
             var currentOffset = file.FREESPACE_OFFSET
@@ -504,12 +620,12 @@ class FreeSpace(val file: NioPageFile) {
         }
     }
 
-    fun findDescription(page: Long): FreespaceDescription {
+    fun findDescription(page: Int): FreespaceDescription {
         var pageCount = page
         for (d in freespaceDescriptions) {
             pageCount -= d.pagesCovered
             if (pageCount <= 0)
-                return d;
+                return d
         }
         throw IndexOutOfBoundsException("could not find freepageentry")
     }
@@ -524,7 +640,7 @@ class FreeSpace(val file: NioPageFile) {
 
         // initialize map so that own pages are used
         for (i in 0..result.pagesUsed) {
-            result.set(freespaceOffset / PAGESIZE + i, true)
+            result.set((freespaceOffset / PAGESIZE).toInt() + i, true)
         }
         return result
     }
@@ -543,7 +659,7 @@ class FreeSpace(val file: NioPageFile) {
     fun freePage(offset: Long): Unit {
         for (d in freespaceDescriptions) {
             if (d.firstOffset <= offset && d.behindFreespaceOffset > offset) {
-                d.set(offset / PAGESIZE, false)
+                d.set((offset / PAGESIZE).toInt(), false)
                 return
             }
         }
@@ -552,7 +668,7 @@ class FreeSpace(val file: NioPageFile) {
 
     class UsedPagesIterator<T>(val file: NioPageFile, val freespaceDescriptions: List<FreespaceDescription>) : Iterator<NioPageFilePage> {
         var currentFreeSpaceDescription = 0
-        var pageInFreeSpaceDescription = 0L
+        var pageInFreeSpaceDescription = 0
 
         init {
             initForFreeSpaceDescription()
@@ -565,7 +681,7 @@ class FreeSpace(val file: NioPageFile) {
         override fun hasNext(): Boolean {
             while (currentFreeSpaceDescription < freespaceDescriptions.size) {
 
-                var freeSpaceDescr = freespaceDescriptions[currentFreeSpaceDescription]
+                val freeSpaceDescr = freespaceDescriptions[currentFreeSpaceDescription]
                 while (pageInFreeSpaceDescription < freeSpaceDescr.pagesCovered) {
                     if (freeSpaceDescr.pageInfo(pageInFreeSpaceDescription + freespaceDescriptions[currentFreeSpaceDescription].firstPageManaged)
                             == FreespaceDescription.PAGEINFO.ALLOCATED)
@@ -586,7 +702,7 @@ class FreeSpace(val file: NioPageFile) {
         override fun next(): NioPageFilePage {
             if (hasNext()) {
                 val result = freespaceDescriptions[currentFreeSpaceDescription].firstPageManaged + pageInFreeSpaceDescription
-                pageInFreeSpaceDescription++;
+                pageInFreeSpaceDescription++
                 return NioPageFilePage(file, result * PAGESIZE)
             }
             throw IndexOutOfBoundsException("no more pages can be found")
@@ -600,7 +716,7 @@ class FreeSpace(val file: NioPageFile) {
 }
 
 fun main(args: Array<String>) {
-    val m = MMapper("/tmp/test.bin", 100000L);
+    val m = MMapper("/tmp/test.bin", 100000L)
     m.putInt(1L, 100)
     assert(m.getInt(1L) == 100)
 }

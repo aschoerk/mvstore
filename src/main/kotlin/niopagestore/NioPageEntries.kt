@@ -54,7 +54,7 @@ class ListPageEntry(c: Collection<NioPageEntry>) : NioPageEntry {
     val a = c.toMutableList()
     override fun compareTo(other: NioPageEntry): Int {
         if (this == other) return 0
-        if (javaClass != other?.javaClass) {
+        if (javaClass != other.javaClass) {
             if (other is EmptyPageEntry)
                 return 1
             return hashCode().compareTo(other.hashCode())
@@ -117,7 +117,7 @@ class BooleanPageEntry(val v: Boolean) : NioPageEntry, NioPageNumberEntryBase(if
     }
 }
 
-class EmptyPageEntry() : NioPageEntry {
+class EmptyPageEntry : NioPageEntry {
     override val length: Short
         get() = 1
     override val type: NioPageEntryType
@@ -192,7 +192,7 @@ class StringPageEntry(val s: String) : NioPageEntry {
 
     override fun compareTo(other: NioPageEntry): Int {
         if (this == other) return 0
-        if (javaClass != other?.javaClass) {
+        if (javaClass != other.javaClass) {
             if (other is EmptyPageEntry)
                 return 1
             return hashCode().compareTo(other.hashCode())
@@ -302,18 +302,15 @@ class ByteArrayPageEntry(val ba: ByteArray) : NioPageEntry {
 
     override fun compareTo(other: NioPageEntry): Int {
         if (this === other) return 0
-        if (javaClass != other?.javaClass) {
+        if (javaClass != other.javaClass) {
             if (other is EmptyPageEntry)
                 return 1
             return hashCode().compareTo(other.hashCode())
         }
         other as ByteArrayPageEntry
-        for (i in 1..minOf(this.ba.size, other.ba.size)) {
-            val tmp = ba[i-1].compareTo(other.ba[i-1])
-            if (tmp != 0)
-                return tmp
-        }
-        return this.ba.size.compareTo(other.ba.size)
+        return (1..minOf(this.ba.size, other.ba.size))
+                .firstOrNull { ba[it -1] != other.ba[it -1] }
+                ?: this.ba.size.compareTo(other.ba.size)
 
     }
 
@@ -368,7 +365,7 @@ fun unmarshalFrom(file: NioPageFile, offset: Long): NioPageEntry {
         PAGEENTRY_LIST -> {
             val len = file.getShort(offset+1)
             val a = mutableListOf<NioPageEntry>()
-            var currentOffset = 0;
+            var currentOffset = 0
             while(currentOffset < len) {
                 val el = unmarshalFrom(file,offset + 3 + currentOffset)
                 a.add(el)

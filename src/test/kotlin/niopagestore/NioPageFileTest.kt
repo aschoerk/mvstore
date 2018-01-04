@@ -12,7 +12,6 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.io.RandomAccessFile
-import java.util.*
 
 class NioPageFileTest {
     private var file: NioPageFile? = null
@@ -62,7 +61,7 @@ class NioPageFileTest {
         idx.validate(page)
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) - page.END_OF_HEADER - 4))
         assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt()- (e.length + 4) - page.END_OF_HEADER - 3))
-        page.delete(idx)
+        page.removeButKeepIndexEntry(idx)
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - 4 - page.END_OF_HEADER - 4))
         assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - 4 - page.END_OF_HEADER - 3))
     }
@@ -87,8 +86,8 @@ class NioPageFileTest {
         idx2.validate(page)
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - page.END_OF_HEADER - 4))
         assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - page.END_OF_HEADER - 3))
-        page.delete(idx2)
-        page.delete(idx1)
+        page.removeButKeepIndexEntry(idx2)
+        page.removeButKeepIndexEntry(idx1)
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - 8 - page.END_OF_HEADER - 4))
         assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - 8 - page.END_OF_HEADER - 3))
     }
@@ -167,9 +166,9 @@ class NioPageFileTest {
             e.validate(page)
             assertTrue(entries.contains(e))
         }
-        var count = 0;
-        for (pageIndexEntry in entries.filter { it.entryOffset and 8L == 8L }) {
-            page.delete(pageIndexEntry)
+        var count = 0
+            for (pageIndexEntry in entries.filter { it.entryOffset and 8L == 8L }) {
+            page.removeButKeepIndexEntry(pageIndexEntry)
             assertFalse(page.entries().asSequence().contains(pageIndexEntry))
             count++
             assertTrue(page.allocationFitsIntoPage(e.length * count))
@@ -218,7 +217,7 @@ class NioPageFileTest {
             e.validate(page)
             assertTrue(entries.contains(e))
         }
-        var count = 0;
+        var count = 0
         for (pageIndexEntry in entries.filter { it.entryOffset and 8L == 8L }) {
             page.remove(pageIndexEntry)
             assertFalse(page.entries().asSequence().contains(pageIndexEntry))

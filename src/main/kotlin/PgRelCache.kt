@@ -8,8 +8,6 @@ import nioobjects.NioSizedObject
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.IntBuffer
-import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 
 val RELKIND_RELATION = 'r'
@@ -48,12 +46,10 @@ class NameData(var b: ByteBuffer, var index: Int) {
     var name: String
     init {
         var sb = StringBuilder()
-        for (i in 0..63) {
-            val i = b[index+i]
-            if (i == 0.toByte())
-                break;
-            sb.append(i.toChar())
-        }
+        (0..63)
+                .map { b[index+ it] }
+                .takeWhile { it != 0.toByte() }
+                .forEach { sb.append(it.toChar()) }
         name = sb.toString()
     }
 }
@@ -179,7 +175,7 @@ class RelationData(val bs: List<NioSizedObject>) : NioBufferWithOffset(bs[0]) {
         get() {
             var len = getLong(att.behind)
             if (len == 0L)
-                return null;
+                return null
             else
                 return bs[1+rel.nAtts]
         }
@@ -203,7 +199,7 @@ class TupleDesc(val nAttrsP: Short, val hasoid: Boolean) {
     var typeMod = -1
     var hasOid = hasoid
     var refCount = -1
-    var constr: TupleConstr? = null;
+    var constr: TupleConstr? = null
     var behind = -1
 }
 
@@ -239,7 +235,7 @@ fun interpretPgCachePart(part: List<NioSizedObject>) {
 
 
 fun main(args: Array<String>) {
-    val filename = "/home/aschoerk/projects/mvcc/17178/pg_internal.init";
+    val filename = "/home/aschoerk/projects/mvcc/17178/pg_internal.init"
     val buffer = createMappedByteBuffer(filename)
 
     // val relData = RelationData(NioBufferPart(buffer,4))
@@ -274,10 +270,10 @@ fun main(args: Array<String>) {
 }
 
 private fun createMappedByteBuffer(filename: String): ByteBuffer {
-    val f = RandomAccessFile(filename, "rw");
+    val f = RandomAccessFile(filename, "rw")
     val channel = f.channel
 
-    val buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, f.length());
+    val buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, f.length())
 
     buffer.order(ByteOrder.LITTLE_ENDIAN)
     return buffer

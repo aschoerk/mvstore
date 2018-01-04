@@ -23,7 +23,7 @@ class NioBtreeTest {
     @Before fun setupNioPageFileTest() {
         File("/tmp/testfile.bin").delete()
         val f = RandomAccessFile("/tmp/testfile.bin", "rw")
-        f.seek(130 * 8192 - 1)
+        f.seek(1000 * 8192 - 1)
         f.writeByte(0xFF)
         val b = MappedResizeableBuffer(f.channel,0L,f.length() )
         this.file = NioPageFile(b, f.length())
@@ -32,9 +32,7 @@ class NioBtreeTest {
 
     @Test
     fun simpleBTreeTest() {
-        val filep = file
-        if (filep == null)
-            throw AssertionError("")
+        val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
         val value = EmptyPageEntry()
         for (i in 1..100) {
@@ -46,10 +44,40 @@ class NioBtreeTest {
     }
 
     @Test
+    fun canStoreDuplicateKeysWithEqualValues() {
+        val filep = file ?: throw AssertionError("")
+        val tree = NioBTree(filep)
+        for (i in 1..100) {
+            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
+            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
+        }
+        for (i in 1..100) {
+            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
+        }
+        for (i in 1..100) {
+            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
+        }
+    }
+
+    @Test
+    fun canStoreDuplicateKeysWithDifferentValues() {
+        val filep = file ?: throw AssertionError("")
+        val tree = NioBTree(filep)
+        for (i in 1..100) {
+            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry((i+1).toDouble()))
+            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
+        }
+        for (i in 1..100) {
+            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
+        }
+        for (i in 1..100) {
+            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry((i+1).toDouble()))
+        }
+    }
+
+    @Test
     fun simpleBTreeTestWithValue() {
-        val filep = file
-        if (filep == null)
-            throw AssertionError("")
+        val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
         val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
         // split will be necessary
@@ -67,9 +95,7 @@ class NioBtreeTest {
 
     @Test
     fun simpleBTreeTestReverseDelete() {
-        val filep = file
-        if (filep == null)
-            throw AssertionError("")
+        val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
         val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
         // split will be necessary
@@ -87,9 +113,7 @@ class NioBtreeTest {
 
     @Test
     fun simpleBTreeTestDeleteOneSplit() {
-        val filep = file
-        if (filep == null)
-            throw AssertionError("")
+        val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
         val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
         // split will be necessary
@@ -107,9 +131,7 @@ class NioBtreeTest {
 
     @Test
     fun simpleBTreeTestReverseDeleteOneSplit() {
-        val filep = file
-        if (filep == null)
-            throw AssertionError("")
+        val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
         val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
         // split will be necessary
@@ -127,9 +149,7 @@ class NioBtreeTest {
 
     @Test
     fun simpleBTreeTestDeleteWithRootSplit() {
-        val filep = file
-        if (filep == null)
-            throw AssertionError("")
+        val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
         val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
         // split will be necessary
@@ -149,9 +169,7 @@ class NioBtreeTest {
 
     @Test
     fun simpleBTreeTestReverseDeleteWithRootSplit() {
-        val filep = file
-        if (filep == null)
-            throw AssertionError("")
+        val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
         val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
         // split will be necessary
@@ -171,24 +189,20 @@ class NioBtreeTest {
 
     @Test
     fun simpleBTreeTestShuffleDeleteWithRootSplit() {
-        val filep = file
-        if (filep == null)
-            throw AssertionError("")
+        val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
         val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
         // split will be necessary
-        for (i in 1..100) {
+        for (i in 1..180) {
             println("During Insert $i")
             tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
         }
         println("After Insert")
         tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
-        val numberList = (1..100).toList().shuffled(Random(11))
+        val numberList = (1..180).toList().shuffled(Random(11))
         for (i in numberList) {
             println("During Remove $i")
             tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
         }
     }
 }

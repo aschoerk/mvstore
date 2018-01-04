@@ -41,7 +41,7 @@ class NioItem(b: NioBufferWithOffset, val itemIdData: ItemIdData) : NioBufferWit
         for(i in 0..itemIdData.len-1) {
             val b = getByte(i)
             if (sb.length > 0) sb.append(" ")
-            if (b >= 31 && b <= 126) {
+            if (b in 31..126) {
                 cb.append(b.toChar())
             } else {
                 cb.append('.')

@@ -6,7 +6,6 @@ package nioobjects
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.IntBuffer
 import java.nio.channels.FileChannel
 
 class TXIdentifier {
@@ -59,11 +58,11 @@ open class NioSizedObject(val orgBuffer: NioBufferWithOffset, val expectedLength
     fun bufferPartBehind()  = NioBufferWithOffset(orgBuffer.b, orgBuffer.offset + 8 + len.toInt())
 }
 
-public fun createMappedByteBuffer(filename: String): ByteBuffer {
-    val f = RandomAccessFile(filename, "rw");
+fun createMappedByteBuffer(filename: String): ByteBuffer {
+    val f = RandomAccessFile(filename, "rw")
     val channel = f.channel
 
-    val buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, f.length());
+    val buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, f.length())
 
     buffer.order(ByteOrder.LITTLE_ENDIAN)
     return buffer

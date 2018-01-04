@@ -1,15 +1,10 @@
 package sandbox
 
 import pg.*
-import java.io.File
 import java.io.RandomAccessFile
-import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.IntBuffer
 import java.nio.channels.FileChannel
-import java.nio.file.OpenOption
-import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 
 /**
  * @author aschoerk
@@ -79,8 +74,8 @@ class RelationData(val b: IntBuffer, var index: Int) {
     }
         var node = RelFileNode(Oid(b[index++]), Oid(b[index++]), Oid(b[index++]))  // 0x0000
     init {
-        index++; // padding
-        index++; index++; // SMgrRelationDataP // 0x0010
+        index++ // padding
+        index++; index++ // SMgrRelationDataP // 0x0010
     }
         var refcnt = b[index++]  // 0x0018
         var backend = BackendId(b[index++])  // 0x001c
@@ -91,58 +86,58 @@ class RelationData(val b: IntBuffer, var index: Int) {
         var createSubId = SubTransactionId(b[index++]) // 0x0024
         var newRelfilenodeSubid = SubTransactionId(b[index++]) // 0x0028
     init {
-        index++; // padding
-        index++; index++; // Form_pg_class rel // 0x0030
-        index++; index++; // TupleDesc att // 0x0038
+        index++ // padding
+        index++; index++ // Form_pg_class rel // 0x0030
+        index++; index++ // TupleDesc att // 0x0038
     }
         var id = Oid(b[index++]) // 0x0040
         var lockInfo = LockInfoData(Oid(b[index++]), Oid(b[index++]))  // 0x0044
     init {
-        index++; // padding
-        index++; index++; // Rules  // 0x50
-        index++; index++; // var rulesCtx = MemoryContext(b)  // 0x58
-        index++; index++;  // TriggerDesc  // 0x60
-        index++; index++;  // RowSecurityDesc  // 0x68
-        index++; index++;  // rd_fkeylist  // 0x70
+        index++ // padding
+        index++; index++ // Rules  // 0x50
+        index++; index++ // var rulesCtx = MemoryContext(b)  // 0x58
+        index++; index++  // TriggerDesc  // 0x60
+        index++; index++  // RowSecurityDesc  // 0x68
+        index++; index++  // rd_fkeylist  // 0x70
     }
         var fkeyValid = b[index++] and 0xff != 0  // 0x0078
     init {
-        index++; // padding
-        index++; index++; // indexlist  // 0x0080
+        index++ // padding
+        index++; index++ // indexlist  // 0x0080
     }
         var oidIndex = Oid(b[index++]) // 0x0088
         var replIdIndex = Oid(b[index++]) // 0x008c
     init {
-        index++; index++; // indexattr  // 0x0090
-        index++; index++;  // keyattr  // 0x0098
-        index++; index++;  // idattr  // 0x00a0
-        index++; index++;  // rd_options  // 0x00a8
-        index++; index++;  // index  // 0x00b0
-        index++; index++;  // indextuple  // 0x00b8
+        index++; index++ // indexattr  // 0x0090
+        index++; index++  // keyattr  // 0x0098
+        index++; index++  // idattr  // 0x00a0
+        index++; index++  // rd_options  // 0x00a8
+        index++; index++  // index  // 0x00b0
+        index++; index++  // indextuple  // 0x00b8
     }
         var oidAmHandler = Oid(b[index++]) // 0x00c0
     init {
-        index++; // padding
-        index++; index++;  // indexcxt  // 0x00c8
-        index++; index++;  // amroutine  // 0x00d0
-        index++; index++;  // opfamily  // 0x00d8
-        index++; index++;  // opcintype  // 0x00e0
-        index++; index++;  // support  // 0x00e8
-        index++; index++;  // supportInfo  // 0x00f0
-        index++; index++;  // indoption // 0x00f8
-        index++; index++;  // indexprs // 0x0100
-        index++; index++;  // indpred // 0x0108
-        index++; index++;  // exclops // 0x0110
-        index++; index++;  // exclprocs // 0x0118
-        index++; index++;  // exclstrats // 0x0120
-        index++; index++;  // amcache // 0x0128
-        index++; index++;  // indcollation // 0x0130
-        index++; index++;  // fdwroutine // 0x0138
+        index++ // padding
+        index++; index++  // indexcxt  // 0x00c8
+        index++; index++  // amroutine  // 0x00d0
+        index++; index++  // opfamily  // 0x00d8
+        index++; index++  // opcintype  // 0x00e0
+        index++; index++  // support  // 0x00e8
+        index++; index++  // supportInfo  // 0x00f0
+        index++; index++  // indoption // 0x00f8
+        index++; index++  // indexprs // 0x0100
+        index++; index++  // indpred // 0x0108
+        index++; index++  // exclops // 0x0110
+        index++; index++  // exclprocs // 0x0118
+        index++; index++  // exclstrats // 0x0120
+        index++; index++  // amcache // 0x0128
+        index++; index++  // indcollation // 0x0130
+        index++; index++  // fdwroutine // 0x0138
     }
     var toastoid = Oid(b[index++]) // 0x0140
     init {
-        index++; // padding
-        index++; index++;  // pgstatinfo // 0x0148
+        index++ // padding
+        index++; index++  // pgstatinfo // 0x0148
         // assertTrue { index == indexP + 0x150 / 4 }
     }
     init {
@@ -282,21 +277,21 @@ class TupleDesc(val nAttrsP: Short, val hasoid: Boolean) {
     var tdTypeMod = -1
     var tdHasOid = hasoid
     var tdRefCount = -1
-    var constr: TupleConstr? = null;
+    var constr: TupleConstr? = null
 }
 
 
 fun main(args: Array<String>) {
 
-    val filename = "/home/aschoerk/projects/mvcc/17178/pg_internal.init";
-    val f = RandomAccessFile(filename,"rw");
+    val filename = "/home/aschoerk/projects/mvcc/17178/pg_internal.init"
+    val f = RandomAccessFile(filename,"rw")
     val channel = f.channel
 
-    val buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, f.length());
+    val buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, f.length())
 
     buffer.order(ByteOrder.LITTLE_ENDIAN)
 
-    val intbuffer = buffer.asIntBuffer();
+    val intbuffer = buffer.asIntBuffer()
 
     val maxInt = f.length() / 4
     val RELCACHE_INIT_FILEMAGIC = 0x573266
@@ -304,7 +299,7 @@ fun main(args: Array<String>) {
         intbuffer[0] == RELCACHE_INIT_FILEMAGIC
     )
 
-    var currentIndex = 1;
+    var currentIndex = 1
 
     while (currentIndex < maxInt) {
         val descriptorLen = intbuffer[currentIndex++]

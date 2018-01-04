@@ -7,9 +7,6 @@ import org.junit.Before
 import org.junit.Test
 import java.nio.IntBuffer
 import java.util.*
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 
 class NioObjectBufferTest {
@@ -21,7 +18,7 @@ class NioObjectBufferTest {
 
     @Before fun setup() {
         intBuffer.clear()
-        for (i in 0..RANDOM_START - 1) {
+        for (i in 0 until RANDOM_START) {
             intBuffer.put(i, i)
         }
         for (i in RANDOM_START .. BUFFER_LENGTH-1) {
