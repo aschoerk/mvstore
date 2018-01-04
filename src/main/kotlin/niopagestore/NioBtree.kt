@@ -237,7 +237,8 @@ class NioBTree(val file: NioPageFile) {
         val toInsert = NioBTreeEntry(key, value)
 
         insertAndFixRoot(toInsert, false)
-        println(check())
+        val message = check()
+        if (message.length > 0) println(message)
     }
 
     private fun insertAndFixRoot(toInsert: NioBTreeEntry, forceUnique: Boolean) {
@@ -302,6 +303,7 @@ class NioBTree(val file: NioPageFile) {
                         if (child.freeSpace() > (PAGESIZE.toInt()) * 2 / 3) {
                             if (child.empty()) {
                                 file.freePage(child)
+                                entryForReplacement.childPageNumber = null
                                 toReInsert.add(entryForReplacement)
                                 return
                             }
@@ -317,7 +319,7 @@ class NioBTree(val file: NioPageFile) {
                                     PAGESIZE - child.freeSpace())) {
                                 // should fit
                                 entryForReplacement.childPageNumber = null  // must be set by inner page, if it is one
-                                println("1merging ${child.number} into $prevChildPageNo parent: ${page.number}")
+                                // println("1merging ${child.number} into $prevChildPageNo parent: ${page.number}")
                                 for (e in child.indexEntries()) {
                                     if (!e.deleted) {
                                         val entry = unmarshallEntry(child, e)
@@ -334,16 +336,20 @@ class NioBTree(val file: NioPageFile) {
                                 leftPage.add(entryForReplacement)
                                 file.freePage(child)
                             } else {
-                                if (!page.allocationFitsIntoPage(entryForReplacement.length))
-                                // TODO: implement if child entry does not fit into inner page during deletion
+                                if (!page.allocationFitsIntoPage(entryForReplacement.length)) {
                                     throw NotImplementedError("TODO: implement if child entry does not fit into inner page during deletion")
+                                }
+                                // TODO: implement if child entry does not fit into inner page during deletion
+
                                 page.add(entryForReplacement)
                             }
 
                         } else {
-                            if (!page.allocationFitsIntoPage(entryForReplacement.length))
-                            // TODO: implement if child entry does not fit into inner page during deletion
+                            if (!page.allocationFitsIntoPage(entryForReplacement.length)) {
                                 throw NotImplementedError("TODO: implement if child entry does not fit into inner page during deletion")
+                            }
+                            // TODO: implement if child entry does not fit into inner page during deletion
+
                             page.add(entryForReplacement)
                         }
                     }
@@ -406,7 +412,7 @@ class NioBTree(val file: NioPageFile) {
         if (leftPage.freeSpace() - rightEntry.length - leftPage.INDEX_ENTRY_SIZE >
                 (PAGESIZE - rightPage.freeSpace())) {
             rightEntry.childPageNumber = null
-            println("2merging ${rightPage.number} into ${leftPage.number} parent: ${page.number}")
+            // println("2merging ${rightPage.number} into ${leftPage.number} parent: ${page.number}")
             for (e in rightPage.indexEntries()) {
                 if (!e.deleted) {
                     val entry = unmarshallEntry(rightPage, e)
@@ -453,10 +459,10 @@ class NioBTree(val file: NioPageFile) {
         val toReInsert = mutableListOf<NioBTreeEntry>()
         delete(getPrepareRoot(), key, value, toReInsert)
         for (e in toReInsert) {
-            e.childPageNumber = null
             insertAndFixRoot(e, true)
         }
-        println(check())
+        val message = check()
+        if (message.length > 0) println(message)
     }
 
     /*

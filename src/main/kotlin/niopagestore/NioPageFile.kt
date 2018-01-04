@@ -400,7 +400,6 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
     fun freeSpace() = file.getInt(offset + FREE_SPACE_INDEX)
 
     fun add(entry: NioPageEntry): NioPageIndexEntry {
-        println("adding $entry to $number")
         if (!allocationFitsIntoPage(entry.length))
             throw IndexOutOfBoundsException("can't add new entry in this page")
         val indexEntry = allocate(entry.length)
@@ -411,7 +410,6 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
     }
 
     fun removeButKeepIndexEntry(entry: NioPageIndexEntry): Unit {
-        println("setting $entry in $number deleted")
         val entry = IndexEntry(this, entry.entryOffset)
         if (entry.offs == 0)
             throw IndexOutOfBoundsException("entry to be deleted is already removed")
@@ -428,7 +426,6 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
     }
 
     fun remove(entry: IndexEntry) {
-        println("removing $entry from $number")
         if (entry.offs == 0)
             throw IndexOutOfBoundsException("entry to be removed is already")
         if (entry.deleted)
