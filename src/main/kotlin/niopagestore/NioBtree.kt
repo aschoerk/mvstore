@@ -132,8 +132,16 @@ class NioBTree(val file: NioPageFile) {
                         val nextLayerPage = NioPageFilePage(file, childPageNumber)
                         val result = insert(nextLayerPage, toInsert, forceUnique)
                         if (result != null) {
-                            // insert this in current page since a split has occurred
-                            return insert(page, result, forceUnique)
+                            if (result.key == EmptyPageEntry()) {
+                                // need to replace childPageNumber
+                                pageEntries[toInsertIndex - 1].childPageNumber = result.childPageNumber
+                                page.remove(pageEntries[toInsertIndex - 1].indexEntry!!)
+                                page.add(pageEntries[toInsertIndex - 1])
+                                return null
+                            } else {
+                                // insert this in current page since a split has occurred
+                                return insert(page, result, forceUnique)
+                            }
                         }
                     }
                 } else {
@@ -164,6 +172,15 @@ class NioBTree(val file: NioPageFile) {
             page.add(toInsert)
             return null
         } else {
+            if (pageEntries.size == 1) {
+                val newPage = file.newPage()
+                val emptyEntry = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
+                emptyEntry.childPageNumber = pageEntries[0].childPageNumber
+                newPage.add(emptyEntry)  // first Entry of new inner node
+                newPage.add(toInsert)    // add new value
+                emptyEntry.childPageNumber = newPage.number
+                return emptyEntry
+            }
             pageEntries.add(toInsertIndex, toInsert)
             val completeLength = pageEntries.sumBy { it.length.toInt() } + toInsert.length
             var currentSum = 0
@@ -246,13 +263,18 @@ class NioBTree(val file: NioPageFile) {
 
     private fun fixRoot(splitElement: NioBTreeEntry?) {
         if (splitElement != null) {
-            val newRoot = file.newPage()
-            val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
-            firstRootElement.childPageNumber = root!!.number
-            newRoot.add(firstRootElement)
-            newRoot.add(splitElement)
-            file.rootPage = newRoot.number
-            root = newRoot
+            if (splitElement.key == EmptyPageEntry()) {
+                file.rootPage = splitElement.childPageNumber!!
+                root = NioPageFilePage(file, file.rootPage)
+            } else {
+                val newRoot = file.newPage()
+                val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
+                firstRootElement.childPageNumber = root!!.number
+                newRoot.add(firstRootElement)
+                newRoot.add(splitElement)
+                file.rootPage = newRoot.number
+                root = newRoot
+            }
         }
     }
 
