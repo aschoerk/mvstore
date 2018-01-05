@@ -646,7 +646,7 @@ class FreeSpace(val file: NioPageFile) {
         for (d in freespaceDescriptions) {
             val freeOffset = d.findAndSetPage()
             if (freeOffset != 0L) {
-                file.setInt(freeOffset, 0)
+                file.setInt(freeOffset, 0)  // make sure this page will get initialized as soon as first used.
                 return freeOffset
             }
         }

@@ -23,7 +23,7 @@ class NioBtreeTest {
     @Before fun setupNioPageFileTest() {
         File("/tmp/testfile.bin").delete()
         val f = RandomAccessFile("/tmp/testfile.bin", "rw")
-        f.seek(1000 * 8192 - 1)
+        f.seek(10000 * 8192 - 1)
         f.writeByte(0xFF)
         val b = MappedResizeableBuffer(f.channel,0L,f.length() )
         this.file = NioPageFile(b, f.length())
@@ -60,19 +60,32 @@ class NioBtreeTest {
     }
 
     @Test
-    fun canStoreDuplicateKeysWithDifferentValues() {
+    fun canStoreDuplicateKeysWithManyDifferentValues() {
         val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
-        for (i in 1..100) {
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry((i+1).toDouble()))
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
-        }
-        for (i in 1..100) {
-            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
-        }
-        for (i in 1..100) {
-            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry((i+1).toDouble()))
-        }
+        val valueNumber = 100000
+        (1..valueNumber).shuffled().forEach( {
+            tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry((it+1).toDouble()))
+            tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry(it.toDouble()))
+            if (it % 1000 == 0) {
+                println("Inserted $it pairs")
+                tree.check()
+            }
+        })
+        (1..valueNumber).shuffled().forEach( {
+            tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry((it).toDouble()))
+            if (it % 1000 == 0) {
+                println("Removed $it second values")
+                tree.check()
+            }
+        })
+        (1..valueNumber).shuffled().forEach( {
+            tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry((it+1).toDouble()))
+            if (it % 1000 == 0) {
+                println("Removed $it second values")
+                tree.check()
+            }
+        })
     }
 
     @Test
@@ -97,7 +110,7 @@ class NioBtreeTest {
     fun simpleBTreeTestReverseDelete() {
         val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
-        val value = ByteArrayPageEntry(ByteArray(5000))  // 4 Entries per page possible
+        val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
         // split will be necessary
         for (i in 1..3) {
             println("Inserting $i")
@@ -117,11 +130,11 @@ class NioBtreeTest {
         val tree = NioBTree(filep)
         val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
         // split will be necessary
-        for (i in 1..5) {
-            println("Inserting $i")
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
+        (1..5).forEach( {
+            println("Inserting $it")
+            tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), value)
             tree.iterator(TXIdentifier()).forEach { println("    $it, ") }
-        }
+        })
         for (i in 1..5) {
             println("Deleting $i")
             tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
@@ -140,11 +153,11 @@ class NioBtreeTest {
             tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
             tree.iterator(TXIdentifier()).forEach { println("    $it, ") }
         }
-        for (i in 1..5) {
-            println("Deleting ${6-i}")
-            tree.remove(TXIdentifier(), DoublePageEntry((6-i).toDouble()), value)
+        (1..5).reversed().forEach({
+            println("Deleting $it")
+            tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), value)
             tree.iterator(TXIdentifier()).forEach { println("    $it, ") }
-        }
+        })
     }
 
     @Test
@@ -222,11 +235,31 @@ class NioBtreeTest {
         }
         println("After Insert")
         tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
-        val numberList2 = (1..numberToInsert).toList().shuffled(Random(11))
-        for (i in numberList2) {
-            println("During Remove $i")
-            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
+        (1..numberToInsert).shuffled(Random(11)).forEach( {
+            println("During Remove $it")
+            tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), value)
+        })
+    }
+
+    @Test
+    fun simpleBTreeTestShuffleDeleteAndInsertsSinglePageRecords() {
+        val filep = file ?: throw AssertionError("")
+        val tree = NioBTree(filep)
+        val value = ByteArrayPageEntry(ByteArray(5000))  // 4 Entries per page possible
+        // split will be necessary
+        val numberToInsert = 180
+        val numberList1 = (1..numberToInsert).toList().shuffled(Random(11))
+
+        for (i in numberList1) {
+            println("During Insert $i")
+            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
         }
+        println("After Insert")
+        tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
+        (1..numberToInsert).shuffled(Random(11)).forEach( {
+            println("During Remove $it")
+            tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), value)
+        })
     }
 
     @Test
@@ -242,7 +275,7 @@ class NioBtreeTest {
 
                 }
         )
-        println("After Insert")
+        println("After Insert \n ${tree.check()}")
         tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
         val loops = 30
         (1..loops).forEach({ loopcount ->
@@ -251,6 +284,7 @@ class NioBtreeTest {
             (1..half).shuffled(Random(loopcount % 100L)).forEach(
                     {
 
+                        println("inserting $it")
                         tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
 
                     }
