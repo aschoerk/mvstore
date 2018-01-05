@@ -116,7 +116,7 @@ class NioBTree(val file: NioPageFile) {
             if (greater == null && pageEntries.size == 0
                     || greater == null && pageEntries.first().isLeafNode
                     || greater != null && greater.isLeafNode) {
-                return insertAndSplitIfNecessary(page, toInsert, greater, toInsertIndex, pageEntries, false)
+                return insertAndSplitIfNecessary(page, toInsert, toInsertIndex, pageEntries, false)
             } else {
                 // found in inner Node
                 assert(
@@ -138,7 +138,7 @@ class NioBTree(val file: NioPageFile) {
                     }
                 } else {
                     // insert into inner page
-                    return insertAndSplitIfNecessary(page, toInsert, greater, toInsertIndex, pageEntries, true)
+                    return insertAndSplitIfNecessary(page, toInsert, toInsertIndex, pageEntries, true)
                 }
             }
         return null
@@ -157,7 +157,6 @@ class NioBTree(val file: NioPageFile) {
 
     private fun insertAndSplitIfNecessary(page: NioPageFilePage,
                                           toInsert: NioBTreeEntry,
-                                          greater: NioBTreeEntry?,
                                           toInsertIndex: Int,
                                           pageEntries: MutableList<NioBTreeEntry>,
                                           isInnerPage: Boolean): NioBTreeEntry? {
@@ -165,10 +164,7 @@ class NioBTree(val file: NioPageFile) {
             page.add(toInsert)
             return null
         } else {
-            if (greater == null)
-                pageEntries.add(toInsert)
-            else
-                pageEntries.add(toInsertIndex, toInsert)
+            pageEntries.add(toInsertIndex, toInsert)
             val completeLength = pageEntries.sumBy { it.length.toInt() } + toInsert.length
             var currentSum = 0
             var splitEntry: NioBTreeEntry? = null
@@ -199,17 +195,19 @@ class NioBTree(val file: NioPageFile) {
                     }
 
                     if (!(e === toInsert) && e.indexEntry != null) {
-                        // remove splitentry and right of limit, if not newly to be inserted (not yet in tree)
+                        // remove everything right of limit (including splitentry), except if newly to be inserted (not yet in tree)
                         page.remove(e.indexEntry)
                     }
                 } else {
                     if (e === toInsert)
+                    // don't add new entry yet, since page-index might get compacted during add and btw.
+                    // can't add otherwise the split wasn't necessary
                         insertLeft = true
                 }
             }
-            // entry to be inserted should be on the left s
+            // entry to be inserted found on the left side during limit calculation
             if (insertLeft) {
-                // new entry not inserted in right page and not split-element
+                // so the new entry not inserted yet during splitting
                 page.add(toInsert)
             }
             return splitEntry
@@ -243,6 +241,10 @@ class NioBTree(val file: NioPageFile) {
 
     private fun insertAndFixRoot(toInsert: NioBTreeEntry, forceUnique: Boolean) {
         val splitElement = insert(getPrepareRoot(), toInsert, forceUnique)
+        fixRoot(splitElement)
+    }
+
+    private fun fixRoot(splitElement: NioBTreeEntry?) {
         if (splitElement != null) {
             val newRoot = file.newPage()
             val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
@@ -254,7 +256,7 @@ class NioBTree(val file: NioPageFile) {
         }
     }
 
-    private fun delete(page: NioPageFilePage, toDelete: NioPageEntry, value: NioPageEntry, toReInsert: MutableList<NioBTreeEntry>): Unit {
+    private fun delete(page: NioPageFilePage, toDelete: NioPageEntry, value: NioPageEntry, toReInsert: MutableList<NioBTreeEntry>): Pair<Boolean, NioBTreeEntry?> {
         val pageEntries = getSortedEntries(page)
         val greater = pageEntries.find { it >= toDelete }
         val index = if (greater == null) pageEntries.size else pageEntries.indexOf(greater)
@@ -263,11 +265,19 @@ class NioBTree(val file: NioPageFile) {
             val referingEntry = pageEntries[index - 1]
             val nextChildPageNo = referingEntry.childPageNumber ?: throw IndexOutOfBoundsException("entry to be deleted not found in tree")
             val child = NioPageFilePage(file, nextChildPageNo)
-            delete(child, toDelete, value, toReInsert)
+            val result = delete(child, toDelete, value, toReInsert)
+            val newEntry = result.second
+            if (newEntry != null) {
+                assert(result.first)
+                return Pair(true, insert(page, newEntry, false))
+            } else {
+                if (result.first)  // make sure to don't handle anything further since a split occured during the call with possible changes
+                    return Pair(true, null)
+            }
             if (child.freeSpace() > (PAGESIZE.toInt()) * 2 / 3) {
                 if (child.empty()) {
                     handleEmptyChildPage(page, child, pageEntries, index - 1, toReInsert)
-                    return
+                    return Pair(false, null)
                 }
                 // try to remove child
                 if (index > 1) {
@@ -295,9 +305,10 @@ class NioBTree(val file: NioPageFile) {
                     } else {
                         val child = NioPageFilePage(file, nextChildPageNo)
 
-                        val entryForReplacement = findSmallestEntry(child)
-                        // now removeButKeepIndexEntry it from child
-                        delete(child, entryForReplacement, EmptyPageEntry(), toReInsert)
+                        var entryForReplacement = findSmallestEntry(child)
+                        assert(entryForReplacement.childPageNumber == null)
+                        // now removeButKeepIndexEntry it from child, no split can occur, since a leaf-element will be removed
+                        assert(!delete(child, entryForReplacement, EmptyPageEntry(), toReInsert).first)
                         entryForReplacement.childPageNumber = greater.childPageNumber
                         page.remove(greater.indexEntry)
                         if (child.freeSpace() > (PAGESIZE.toInt()) * 2 / 3) {
@@ -305,7 +316,7 @@ class NioBTree(val file: NioPageFile) {
                                 file.freePage(child)
                                 entryForReplacement.childPageNumber = null
                                 toReInsert.add(entryForReplacement)
-                                return
+                                return Pair(false, null)
                             }
                             assert(index > 0)
                             val prevChildPageNo = pageEntries[index - 1].childPageNumber
@@ -337,20 +348,22 @@ class NioBTree(val file: NioPageFile) {
                                 file.freePage(child)
                             } else {
                                 if (!page.allocationFitsIntoPage(entryForReplacement.length)) {
-                                    throw NotImplementedError("TODO: implement if child entry does not fit into inner page during deletion")
+                                    println("doing split")
+                                    pageEntries.removeAt(index)
+                                    return Pair(true, insertAndSplitIfNecessary(page, entryForReplacement, index, pageEntries, true))
+                                } else {
+                                    page.add(entryForReplacement)
                                 }
-                                // TODO: implement if child entry does not fit into inner page during deletion
-
-                                page.add(entryForReplacement)
                             }
 
                         } else {
                             if (!page.allocationFitsIntoPage(entryForReplacement.length)) {
-                                throw NotImplementedError("TODO: implement if child entry does not fit into inner page during deletion")
+                                println("doing split")
+                                pageEntries.removeAt(index)
+                                return Pair(true, insertAndSplitIfNecessary(page, entryForReplacement, index, pageEntries, true))
+                            } else {
+                                page.add(entryForReplacement)
                             }
-                            // TODO: implement if child entry does not fit into inner page during deletion
-
-                            page.add(entryForReplacement)
                         }
                     }
                 } else {  // remove this value, entry, linkage, ... stay except if merge is necessary
@@ -361,6 +374,7 @@ class NioBTree(val file: NioPageFile) {
                 throw IndexOutOfBoundsException("value not found associated with key")
             }
         }
+        return Pair(false, null)
     }
 
     private fun handleEmptyChildPage(page: NioPageFilePage, child: NioPageFilePage, pageEntries: MutableList<NioBTreeEntry>, index: Int, toReInsert: MutableList<NioBTreeEntry>) {
@@ -457,7 +471,8 @@ class NioBTree(val file: NioPageFile) {
 
     fun remove(tx: TXIdentifier, key: NioPageEntry, value: NioPageEntry) {
         val toReInsert = mutableListOf<NioBTreeEntry>()
-        delete(getPrepareRoot(), key, value, toReInsert)
+        val splitElement = delete(getPrepareRoot(), key, value, toReInsert).second
+        fixRoot(splitElement)
         for (e in toReInsert) {
             insertAndFixRoot(e, true)
         }
@@ -538,7 +553,7 @@ class NioBTree(val file: NioPageFile) {
             // println("Doing Page: ${page.number}")
             val entries = getSortedEntries(page)
             if (entries.size == 0) {
-                result.append("page(${page.number}):Empty Page\n")
+                result.append("page(${page.number}):Empty Leaf Page\n")
             } else {
                 var tmp = entries[0]
                 if (tmp.childPageNumber != null) {
@@ -547,6 +562,9 @@ class NioBTree(val file: NioPageFile) {
                     }
                     if (entries[0].values.length != 4.toShort()) {
                         result.append("page(${page.number}):Expected length of 4 in values in first entry of page ${page.number}\n")
+                    }
+                    if (entries.size == 1) {
+                        result.append("page(${page.number}):Empty Inner Page\n")
                     }
                     for (i in 1..entries.size - 1) {
                         val nioBTreeEntry = entries[i]

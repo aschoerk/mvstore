@@ -97,7 +97,7 @@ class NioBtreeTest {
     fun simpleBTreeTestReverseDelete() {
         val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
-        val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
+        val value = ByteArrayPageEntry(ByteArray(5000))  // 4 Entries per page possible
         // split will be necessary
         for (i in 1..3) {
             println("Inserting $i")
@@ -208,7 +208,7 @@ class NioBtreeTest {
     }
 
     @Test
-    fun simpleBTreeTestShuffleDeleteAndInserrts() {
+    fun simpleBTreeTestShuffleDeleteAndInserts() {
         val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
         val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
@@ -230,50 +230,49 @@ class NioBtreeTest {
     }
 
     @Test
-    fun simpleBTreeTestShuffleDeleteAndReInserts() {
+    fun canShuffledDeletesAndReInsertsAndSplitDuringDeletes() {
         val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
-        val value = ByteArrayPageEntry(ByteArray(2000))  // 4 Entries per page possible
-        // split will be necessary
+         // split will be necessary
         val numberToInsert = 250
-        val numberList1 = (1..numberToInsert).toList().shuffled(Random(11))
 
         (1..numberToInsert).shuffled(Random(200)).forEach(
                 {
-                    tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), ByteArrayPageEntry(ByteArray((it % 100) * 20)))
+                    tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
 
                 }
         )
         println("After Insert")
         tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
-        (1..1000).forEach({ loopcount ->
+        val loops = 30
+        (1..loops).forEach({ loopcount ->
             var half = numberToInsert / 2
             println("During Remove first Half $loopcount")
             (1..half).shuffled(Random(loopcount % 100L)).forEach(
                     {
 
-                        tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), ByteArrayPageEntry(ByteArray((it % 100) * 20)))
+                        tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
 
                     }
             )
             println("During Reinsert first Half $loopcount")
             (1..half).toList().shuffled(Random(loopcount % 100L)).forEach(
                     {
-                        tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), ByteArrayPageEntry(ByteArray((it % 100) * 20)))
+                        tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
 
                     }
             )
             println("During Remove second Half $loopcount")
             (half+1..numberToInsert).shuffled(Random(loopcount % 100L)).forEach(
                     {
-                        tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), ByteArrayPageEntry(ByteArray((it % 100) * 20)))
+                        tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
 
                     }
             )
             println("During Reinsert second Half $loopcount")
             (half+1..numberToInsert).shuffled(Random(loopcount % 100L)).forEach(
                     {
-                        tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), ByteArrayPageEntry(ByteArray((it % 100) * 20)))
+                        tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
                     }
             )
 
@@ -281,9 +280,11 @@ class NioBtreeTest {
         println("During complete Remove at end")
         (1..numberToInsert).shuffled(Random(200)).forEach(
                 {
-                    tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), ByteArrayPageEntry(ByteArray((it % 100) * 20)))
+                    tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
 
                 }
         )
     }
+
+    private fun byteArrayPageEntry(it: Int) = ByteArrayPageEntry(ByteArray((it % 100) * 10 + 1000))
 }
