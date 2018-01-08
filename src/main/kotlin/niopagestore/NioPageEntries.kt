@@ -2,8 +2,8 @@ package niopageentries
 
 import niopageobjects.NioPageFile
 import niopageentries.NioPageEntryType.*
-import niopageobjects.NioPageFilePage
-import niopageobjects.NioPageIndexEntry
+import niopagestore.NioPageFilePage
+import niopagestore.NioPageIndexEntry
 import niopageobjects.PAGESIZE
 import java.util.*
 

@@ -3,7 +3,6 @@ package niopagestore
 import nioobjects.TXIdentifier
 import niopageentries.*
 import niopageobjects.NioPageFile
-import niopageobjects.NioPageFilePage
 import niopageobjects.PAGESIZE
 import java.util.*
 
@@ -237,10 +236,10 @@ class NioBTree(val file: NioPageFile) {
                     val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
                     firstRootElement.childPageNumber = leaf.number
                     result.add(firstRootElement)
-                    file.rootPage = result.number
+                    file.rootPageNumber = result.number
                     result
                 } else {
-                    NioPageFilePage(file, file.rootPage)
+                    NioPageFilePage(file, file.rootPageNumber)
                 }
         root = result
         return result
@@ -262,15 +261,15 @@ class NioBTree(val file: NioPageFile) {
     private fun fixRoot(splitElement: NioBTreeEntry?) {
         if (splitElement != null) {
             if (splitElement.key == EmptyPageEntry()) {
-                file.rootPage = splitElement.childPageNumber!!
-                root = NioPageFilePage(file, file.rootPage)
+                file.rootPageNumber = splitElement.childPageNumber!!
+                root = NioPageFilePage(file, file.rootPageNumber)
             } else {
                 val newRoot = file.newPage()
                 val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
                 firstRootElement.childPageNumber = root!!.number
                 newRoot.add(firstRootElement)
                 newRoot.add(splitElement)
-                file.rootPage = newRoot.number
+                file.rootPageNumber = newRoot.number
                 root = newRoot
             }
         } else if (root != null) {
@@ -280,7 +279,7 @@ class NioBTree(val file: NioPageFile) {
                 if (childPageNumber != null) {
                     file.freePage(root!!)
                     root = NioPageFilePage(file, childPageNumber)
-                    file.rootPage = childPageNumber
+                    file.rootPageNumber = childPageNumber
                 }
             }
 
@@ -746,7 +745,7 @@ class NioBTree(val file: NioPageFile) {
                     for (i in 0..entries.size - 1) {
                         val childPageNumber = entries[i].childPageNumber
                         if (childPageNumber != null) {
-                            if (file.freeMap.findDescription(childPageNumber).getUsed(childPageNumber)) {
+                            if (file.isUsed(childPageNumber)) {
                                 val nextSmaller = if (i == 0) smallerEntryKey else entries[i].key
                                 val nextBigger = if (i + 1 < entries.size) entries[i + 1].key else biggerEntryKey
                                 checkPage(NioPageFilePage(file, childPageNumber), nextSmaller, nextBigger, done, result)

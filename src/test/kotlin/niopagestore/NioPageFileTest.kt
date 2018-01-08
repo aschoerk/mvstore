@@ -3,10 +3,7 @@ package niopagestore
 import junit.framework.Assert.assertFalse
 import junit.framework.Assert.assertTrue
 import niopageentries.*
-import niopageobjects.NioPageFile
-import niopageobjects.NioPageFilePage
-import niopageobjects.NioPageIndexEntry
-import niopageobjects.PAGESIZE
+import niopageobjects.*
 import org.agrona.concurrent.MappedResizeableBuffer
 import org.junit.Before
 import org.junit.Test
@@ -21,20 +18,29 @@ class NioPageFileTest {
     @Before fun setupNioPageFileTest() {
         File("/tmp/testfile.bin").delete()
         val f = RandomAccessFile("/tmp/testfile.bin", "rw")
-        f.seek(65 * 8192 - 1)
+        f.seek(100000 * 8192 - 1)
         f.writeByte(0xFF)
         val b = MappedResizeableBuffer(f.channel,0L,f.length() )
         this.file = NioPageFile(b, f.length())
         this.randomAccessFile = f
     }
 
+
+
     @Test
     fun testInitClear()  {
         
         val pages: MutableList<NioPageFilePage> = mutableListOf()
-        for (i in 0..randomAccessFile!!.length() / PAGESIZE - 3) {
+        var lastPage: NioPageFilePage? = null
+        for (i in 0..(randomAccessFile!!.length() / PAGESIZE - 1) - 3) {
             val page = file!!.newPage()
+            if (lastPage != null) {
+                if (lastPage.offset + 8192 != page.offset) {
+                    assertTrue(lastPage.offset + 2 * 8192 == page.offset)
+                }
+            }
             pages.add(page)
+            lastPage = page
         }
         val freedPages: MutableList<NioPageFilePage> = mutableListOf()
 
