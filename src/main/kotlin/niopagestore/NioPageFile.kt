@@ -629,7 +629,7 @@ class FreeSpace(val file: NioPageFile) {
 
 
     private fun initNextFreeSpace(freespaceOffset: Long, proposedLength: Long): FreespaceDescription {
-        val size = minOf(MIN_INITIAL_SIZE, proposedLength)
+        val size = maxOf(MIN_INITIAL_SIZE, proposedLength)
         file.setInt(freespaceOffset, FREEMAP_MAGIC)
         file.setInt(freespaceOffset + 4, (size / (PAGESIZE * 8) + 1).toInt())
         file.setLong(freespaceOffset + 8, 0L)

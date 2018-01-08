@@ -23,7 +23,7 @@ class NioBtreeTest {
     @Before fun setupNioPageFileTest() {
         File("/tmp/testfile.bin").delete()
         val f = RandomAccessFile("/tmp/testfile.bin", "rw")
-        f.seek(10000 * 8192 - 1)
+        f.seek(100000 * 8192 - 1)
         f.writeByte(0xFF)
         val b = MappedResizeableBuffer(f.channel,0L,f.length() )
         this.file = NioPageFile(b, f.length())
@@ -63,27 +63,36 @@ class NioBtreeTest {
     fun canStoreDuplicateKeysWithManyDifferentValues() {
         val filep = file ?: throw AssertionError("")
         val tree = NioBTree(filep)
-        val valueNumber = 100000
+        val valueNumber = 1000000
         (1..valueNumber).shuffled().forEach( {
             tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry((it+1).toDouble()))
             tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry(it.toDouble()))
             if (it % 1000 == 0) {
                 println("Inserted $it pairs")
-                tree.check()
+                checkAndOutput(tree)
+                val valuesbetween = (1..it / 100 ).shuffled()
+                valuesbetween.forEach( {
+                    tree.insert(TXIdentifier(), DoublePageEntry(it+0.5), DoublePageEntry((it+1).toDouble()))
+                })
+                valuesbetween.forEach( {
+                    tree.remove(TXIdentifier(), DoublePageEntry(it+0.5), DoublePageEntry((it+1).toDouble()))
+                })
+                checkAndOutput(tree)
             }
+
         })
         (1..valueNumber).shuffled().forEach( {
             tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry((it).toDouble()))
             if (it % 1000 == 0) {
                 println("Removed $it second values")
-                tree.check()
+                checkAndOutput(tree)
             }
         })
         (1..valueNumber).shuffled().forEach( {
             tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry((it+1).toDouble()))
             if (it % 1000 == 0) {
                 println("Removed $it second values")
-                tree.check()
+                checkAndOutput(tree)
             }
         })
     }
@@ -272,6 +281,7 @@ class NioBtreeTest {
         (1..numberToInsert).shuffled(Random(200)).forEach(
                 {
                     tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
+                    println(tree.check())
 
                 }
         )
@@ -283,30 +293,33 @@ class NioBtreeTest {
             println("During Remove first Half $loopcount")
             (1..half).shuffled(Random(loopcount % 100L)).forEach(
                     {
-
-                        println("inserting $it")
+                        print(" $it")
                         tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
-
+                        checkAndOutput(tree)
                     }
             )
             println("During Reinsert first Half $loopcount")
             (1..half).toList().shuffled(Random(loopcount % 100L)).forEach(
                     {
+                        print(" $it")
                         tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
-
+                        checkAndOutput(tree)
                     }
             )
             println("During Remove second Half $loopcount")
             (half+1..numberToInsert).shuffled(Random(loopcount % 100L)).forEach(
                     {
+                        print(" $it")
                         tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
-
+                        checkAndOutput(tree)
                     }
             )
             println("During Reinsert second Half $loopcount")
             (half+1..numberToInsert).shuffled(Random(loopcount % 100L)).forEach(
                     {
+                        print(" $it")
                         tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
+                        checkAndOutput(tree)
                     }
             )
 
@@ -314,11 +327,18 @@ class NioBtreeTest {
         println("During complete Remove at end")
         (1..numberToInsert).shuffled(Random(200)).forEach(
                 {
+                    print(" $it")
                     tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
-
+                    checkAndOutput(tree)
                 }
         )
     }
 
-    private fun byteArrayPageEntry(it: Int) = ByteArrayPageEntry(ByteArray((it % 100) * 10 + 1000))
+    fun checkAndOutput(tree: NioBTree) {
+        val res = tree.check()
+        if (res.length > 0)
+            println("\n$res")
+    }
+
+    private fun byteArrayPageEntry(it: Int) = ByteArrayPageEntry(ByteArray(3 * (it % 100) * 10 + 2000))
 }

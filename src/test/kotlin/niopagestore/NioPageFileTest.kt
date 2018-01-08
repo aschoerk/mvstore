@@ -299,7 +299,7 @@ class NioPageFileTest {
     }
 
 
-    private fun createTestEntries(): MutableList<NioPageEntry> {
+    private fun createTestEntries(): MutableList<ComparableNioPageEntry> {
         val testEntries = mutableListOf(
                 BytePageEntry(11),
                 ShortPageEntry(-23),
