@@ -18,7 +18,7 @@ class NioPageFileTest {
     @Before fun setupNioPageFileTest() {
         File("/tmp/testfile.bin").delete()
         val f = RandomAccessFile("/tmp/testfile.bin", "rw")
-        f.seek(100000 * 8192 - 1)
+        f.seek(10000 * 8192 - 1)
         f.writeByte(0xFF)
         val b = MappedResizeableBuffer(f.channel,0L,f.length() )
         this.file = NioPageFile(b, f.length())
@@ -48,9 +48,12 @@ class NioPageFileTest {
         for (p in pages) {
             file!!.freePage(p)
             freedPages.add(p)
-            for (l in file!!.usedPagesIterator()) {
-                assertTrue(pages.contains(l))
-                assertFalse(freedPages.contains(l))
+            if (p.number % 1000 == 0) {
+                println("iterating through pages")
+                for (l in file!!.usedPagesIterator()) {
+                    assertTrue(pages.contains(l))
+                    assertFalse(freedPages.contains(l))
+                }
             }
         }
     }

@@ -69,22 +69,22 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
              */
             override fun hasNext(): Boolean {
                 if (lastPageNumber == 0) {
-                    lastPageNumber = 2
+                    lastPageNumber = 1
                     advance()
                 }
                 return lastPageNumber * PAGESIZE < this@NioPageFile.length && this@NioPageFile.isUsed(lastPageNumber)
             }
 
             private fun advance() {
-                var isUsed = this@NioPageFile.isUsed(lastPageNumber)
-                while (!isUsed) {
+                var isUsed = false
+                do {
                     lastPageNumber++
                     if ((lastPageNumber - 1) % PAGES_PER_FREESPACE_REGION == 0)
                         lastPageNumber++
                     if (lastPageNumber * PAGESIZE > this@NioPageFile.length)
                         return
                     isUsed = this@NioPageFile.isUsed(lastPageNumber)
-                }
+                } while (!isUsed)
             }
 
             /**
@@ -119,9 +119,11 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
                                     val pageNum = 1 +
                                             freespaceRegion(pageNumForOffset(freespaceOffset)) * PAGES_PER_FREESPACE_REGION +
                                             (byteOffset-4).toInt() * 8 + i + 1
+                                    assert(isFree(pageNum))
                                     setInt(freespaceOffset  + byteOffset, content or mask)
                                     lastFreespaceOffset = freespaceOffset
                                     lastByteOffset = byteOffset
+                                    assert(isUsed(pageNum))
                                     return pageNum
                                 }
                                 mask = mask shl 1
@@ -138,8 +140,12 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
     private inline fun pageNumForOffset(freespaceOffset: Long): Int = (freespaceOffset / PAGESIZE).toInt()
 
 
-    fun isUsed(pageNum: Int): Boolean {
+    inline fun isUsed(pageNum: Int): Boolean {
         return getByte(freespaceRegionOffset(pageNum) + freespaceByteOffset(pageNum)).toInt() and freespaceByteMask(pageNum) != 0
+    }
+
+    fun isFree(pageNum: Int): Boolean {
+        return getByte(freespaceRegionOffset(pageNum) + freespaceByteOffset(pageNum)).toInt() and freespaceByteMask(pageNum) == 0
     }
 
 
@@ -153,22 +159,22 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
     fun setFree(pageNum: Int) {
         val tmp = getByte(freespaceRegionOffset(pageNum) + freespaceByteOffset(pageNum)).toInt()
         val mask = freespaceByteMask(pageNum)
-        assert(tmp and mask == 1)
+        assert(tmp and mask != 0)
         setByte(freespaceRegionOffset(pageNum) + freespaceByteOffset(pageNum), (tmp xor mask).toByte())
     }
 }
 
-internal fun freespaceRegion(pageNum: Int) = (pageNum - 1) / PAGES_PER_FREESPACE_REGION
+inline fun freespaceRegion(pageNum: Int) = (pageNum - 1) / PAGES_PER_FREESPACE_REGION
 
-internal fun freespaceRegionOffset(pageNum: Int) = (freespaceRegion(pageNum) * PAGES_PER_FREESPACE_REGION + 1) * PAGESIZE
+inline fun freespaceRegionOffset(pageNum: Int) = (freespaceRegion(pageNum) * PAGES_PER_FREESPACE_REGION + 1) * PAGESIZE
 
-internal fun freespaceByteOffset(pageNum: Int) : Long {
+inline fun freespaceByteOffset(pageNum: Int) : Long {
     if (pageNum <= 0 || (pageNum - 1) % PAGES_PER_FREESPACE_REGION == 0)
         throw AssertionError("Page: $pageNum is no datapage")
     return ((pageNum * PAGESIZE) - freespaceRegionOffset(pageNum) - PAGESIZE) / (PAGESIZE * 8) + 4 // freespace-page itself
 }
 
-internal fun freespaceByteMask(pageNum: Int) : Int = 1 shl (((pageNum - 1) % PAGES_PER_FREESPACE_REGION - 1) % 8)
+inline fun freespaceByteMask(pageNum: Int) : Int = 1 shl (((pageNum - 1) % PAGES_PER_FREESPACE_REGION - 1) % 8)
 
 
 fun main(args: Array<String>) {
