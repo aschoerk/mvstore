@@ -5,6 +5,17 @@ import niopageobjects.NioPageFile
 import niopageobjects.PAGESIZE
 import kotlin.experimental.and
 
+const val END_OF_HEADER = 24          // size of the header information
+const val FLAGS_INDEX = 2             // flags about the page bit 30 is always set
+const val FREE_ENTRY_INDEX = 0
+const val FREE_SPACE_INDEX = 4        // stores the amount of freespace in this pages payload area, be aware,
+// that for each element allocation a 4 Byte index entry is necessary.
+const val AFTER_ELEMENT_INDEX = 8     // stores the entryOffset, where the element-index ends
+const val BEGIN_OF_PAYLOAD_POS_INDEX = 12  // stores the beginning of the payload
+const val CHANGED_BY_TRA_INDEX = 16   // stores information about who changed the page last
+const val INDEX_ENTRY_SIZE = 4
+
+
 class NioPageFilePage(val file: NioPageFile, val offset: Long) {
     init {
         assert(offset > PAGESIZE,{"invalid offset: $offset first page in file reserved"})
@@ -14,15 +25,6 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
     constructor(file: NioPageFile, number: Int) : this(file, number.toLong() * PAGESIZE)
     val number
         get() = (offset / PAGESIZE).toInt()
-    val END_OF_HEADER = 24          // size of the header information
-    val FLAGS_INDEX = 2             // flags about the page bit 30 is always set
-    val FREE_ENTRY_INDEX = 0
-    val FREE_SPACE_INDEX = 4        // stores the amount of freespace in this pages payload area, be aware,
-    // that for each element allocation a 4 Byte index entry is necessary.
-    val AFTER_ELEMENT_INDEX = 8     // stores the entryOffset, where the element-index ends
-    val BEGIN_OF_PAYLOAD_POS_INDEX = 12  // stores the beginning of the payload
-    val CHANGED_BY_TRA_INDEX = 16   // stores information about who changed the page last
-    val INDEX_ENTRY_SIZE = 4
 
     init {
         if (file.getInt(offset) == 0) {
@@ -52,10 +54,10 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
                 elementIndexValue and 0x10000 != 0)
 
         constructor(page: NioPageFilePage, offset: Long)
-                : this(((offset - page.END_OF_HEADER - page.offset) / page.INDEX_ENTRY_SIZE).toShort(), page.file.getInt(offset))
+                : this(((offset - END_OF_HEADER - page.offset) / INDEX_ENTRY_SIZE).toShort(), page.file.getInt(offset))
 
         constructor(page: NioPageFilePage, idx: Short)
-                : this(idx, page.file.getInt(page.offset + page.END_OF_HEADER + idx * page.INDEX_ENTRY_SIZE))
+                : this(idx, page.file.getInt(page.offset + END_OF_HEADER + idx * INDEX_ENTRY_SIZE))
 
         constructor(page: NioPageFilePage, entry: NioPageIndexEntry) : this(page, entry.entryOffset)
 
@@ -63,7 +65,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
             get() =(offs shl 17) or len or (if (deleted) 0x8000 else 0x0000) or (if (canBeReused) 0x10000 else 0x00000)
 
         fun setInPage(page: NioPageFilePage) {
-            page.file.setInt(page.offset + page.END_OF_HEADER + idx * page.INDEX_ENTRY_SIZE, value)
+            page.file.setInt(page.offset + END_OF_HEADER + idx * INDEX_ENTRY_SIZE, value)
         }
 
         fun offsetInFile(page: NioPageFilePage) = offs + page.offset
@@ -147,7 +149,7 @@ class NioPageFilePage(val file: NioPageFile, val offset: Long) {
         var actualFreeEntries = 0
         val indexEntries = mutableListOf<IndexEntry>()
         var index = 0.toShort()
-        for (i in (this.END_OF_HEADER..afterElementOffset - 4) step 4) {
+        for (i in (END_OF_HEADER..afterElementOffset - 4) step 4) {
             val currentValue = file.getInt(offset + i)
             val indexEntry = IndexEntry(index++, currentValue)
             indexEntries.add(indexEntry)
@@ -385,9 +387,9 @@ class NioPageIndexEntry(val entryOffset: Long) {
     }
 
     fun isValid(page: NioPageFilePage): Boolean {
-        val indexPtrOc = (entryOffset - page.offset >= page.END_OF_HEADER
-                && entryOffset - page.offset < page.file.getInt(page.offset + page.AFTER_ELEMENT_INDEX)
-                || (entryOffset - page.END_OF_HEADER) % page.INDEX_ENTRY_SIZE == 0L)
+        val indexPtrOc = (entryOffset - page.offset >= END_OF_HEADER
+                && entryOffset - page.offset < page.file.getInt(page.offset + AFTER_ELEMENT_INDEX)
+                || (entryOffset - END_OF_HEADER) % INDEX_ENTRY_SIZE == 0L)
         if (indexPtrOc) {
             val indexEntry = NioPageFilePage.IndexEntry(page, entryOffset)
             return indexEntry.offs < PAGESIZE && indexEntry.offs + indexEntry.len <= PAGESIZE

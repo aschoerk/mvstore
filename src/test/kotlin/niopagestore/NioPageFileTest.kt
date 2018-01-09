@@ -64,15 +64,15 @@ class NioPageFileTest {
 
         val e = DoublePageEntry(1.111)
         assertTrue (page.allocationFitsIntoPage(e.length))
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 3))
         val idx = page.add(e)
         idx.validate(page)
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt()- (e.length + 4) - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt()- (e.length + 4) - END_OF_HEADER - 3))
         page.removeButKeepIndexEntry(idx)
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - 4 - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - 4 - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - 4 - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - 4 - END_OF_HEADER - 3))
     }
 
     @Test
@@ -87,18 +87,18 @@ class NioPageFileTest {
 
         val e = DoublePageEntry(1.111)
         assertTrue (page.allocationFitsIntoPage(e.length))
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 3))
         val idx1 = page.add(e)
         idx1.validate(page)
         val idx2 = page.add(e)
         idx2.validate(page)
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - END_OF_HEADER - 3))
         page.removeButKeepIndexEntry(idx2)
         page.removeButKeepIndexEntry(idx1)
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - 8 - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - 8 - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - 8 - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - 8 - END_OF_HEADER - 3))
     }
 
     @Test
@@ -115,15 +115,15 @@ class NioPageFileTest {
 
         val e = DoublePageEntry(1.111)
         assertTrue (page.allocationFitsIntoPage(e.length))
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 3))
         val idx = page.add(e)
         idx.validate(page)
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt()- (e.length + 4) - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt()- (e.length + 4) - END_OF_HEADER - 3))
         page.remove(idx)
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt()  - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt()  - END_OF_HEADER - 3))
     }
 
     @Test
@@ -138,18 +138,18 @@ class NioPageFileTest {
 
         val e = DoublePageEntry(1.111)
         assertTrue (page.allocationFitsIntoPage(e.length))
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 3))
         val idx1 = page.add(e)
         idx1.validate(page)
         val idx2 = page.add(e)
         idx2.validate(page)
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - END_OF_HEADER - 3))
         page.remove(idx2)
         page.remove(idx1)
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt()  - 4 - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() -  4 - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt()  - 4 - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() -  4 - END_OF_HEADER - 3))
     }
 
     @Test
@@ -164,7 +164,7 @@ class NioPageFileTest {
 
         val e = DoublePageEntry(1.111)
         val entries = mutableListOf<NioPageIndexEntry>()
-        val maxEntries = (PAGESIZE.toInt() - page.END_OF_HEADER) / (e.length + 4)
+        val maxEntries = (PAGESIZE.toInt() - END_OF_HEADER) / (e.length + 4)
         for (i in 1..maxEntries) {
             val element = page.add(e)
             element.validate(page)
@@ -215,7 +215,7 @@ class NioPageFileTest {
 
         val e = DoublePageEntry(1.111)
         val entries = mutableListOf<NioPageIndexEntry>()
-        val maxEntries = (PAGESIZE.toInt() - page.END_OF_HEADER) / (e.length + 4)
+        val maxEntries = (PAGESIZE.toInt() - END_OF_HEADER) / (e.length + 4)
         for (i in 1..maxEntries) {
             val element = page.add(e)
             element.validate(page)
@@ -244,7 +244,7 @@ class NioPageFileTest {
             element.validate(page)
             entries2.add(element)
         }
-        assertFalse(page.allocationFitsIntoPage(e.length + page.INDEX_ENTRY_SIZE))
+        assertFalse(page.allocationFitsIntoPage(e.length + INDEX_ENTRY_SIZE))
         for (e in page.entries()) {
             e.validate(page)
             assertTrue(entries2.contains(e))
@@ -339,13 +339,13 @@ class NioPageFileTest {
 
         val e = DoublePageEntry(1.111)
         assertTrue (page.allocationFitsIntoPage(e.length))
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 3))
         val idx1 = page.add(e)
         idx1.validate(page)
         val idx2 = page.add(e)
         idx2.validate(page)
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - page.END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - page.END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - END_OF_HEADER - 3))
     }
 }

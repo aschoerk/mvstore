@@ -385,7 +385,7 @@ class NioBTree(val file: NioPageFile) {
                                 // leftPage.compactIndexArea()
                                 // child.compactIndexArea()
 
-                                if (leftPage.freeSpace() - entryForReplacement.length - leftPage.INDEX_ENTRY_SIZE > (
+                                if (leftPage.freeSpace() - entryForReplacement.length - INDEX_ENTRY_SIZE > (
                                         PAGESIZE - child.freeSpace())) {
                                     // should fit
                                     entryForReplacement.childPageNumber = null  // must be set by inner page, if it is one
@@ -484,7 +484,7 @@ class NioBTree(val file: NioPageFile) {
         leftPage.compactIndexArea()
         rightPage.compactIndexArea()
 
-        if (leftPage.freeSpace() - rightEntry.length - leftPage.INDEX_ENTRY_SIZE >
+        if (leftPage.freeSpace() - rightEntry.length - INDEX_ENTRY_SIZE >
                 (PAGESIZE - rightPage.freeSpace())) {
             rightEntry.childPageNumber = null
             // println("2merging ${rightPage.number} into ${leftPage.number} parent: ${page.number}")

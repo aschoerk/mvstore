@@ -54,6 +54,7 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
         val pageNum = allocPage()
         if (pageNum == null)
             throw AssertionError("TODO: extend file")
+        setInt(pageNum * PAGESIZE, 0)    // initialize page to show also by content, that it is new
         return NioPageFilePage(this, pageNum)
     }
 
