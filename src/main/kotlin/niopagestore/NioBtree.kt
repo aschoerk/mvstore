@@ -2,6 +2,7 @@ package niopagestore
 
 import nioobjects.TXIdentifier
 import niopageentries.*
+import niopageobjects.INioPageFile
 import niopageobjects.NioPageFile
 import niopageobjects.PAGESIZE
 import java.util.*
@@ -24,7 +25,7 @@ class NioBTreeEntry(val key: ComparableNioPageEntry, val values: ListPageEntry, 
     override val type: NioPageEntryType
         get() = NioPageEntryType.ELSE
 
-    override fun marshalTo(file: NioPageFile, offset: Long) {
+    override fun marshalTo(file: INioPageFile, offset: Long) {
         key.marshalTo(file, offset)
         values.marshalTo(file, offset + key.length)
         if (childPageNumber != null) {
@@ -80,7 +81,7 @@ fun unmarshallEntry(page: NioPageFilePage, indexEntry: NioPageFilePage.IndexEntr
     return result
 }
 
-class NioBTree(val file: NioPageFile) {
+class NioBTree(val file: INioPageFile) {
     var root: NioPageFilePage? = null
 
     private fun insert(page: NioPageFilePage, toInsert: NioBTreeEntry, forceUnique: Boolean): NioBTreeEntry? {
@@ -258,31 +259,48 @@ class NioBTree(val file: NioPageFile) {
         fixRoot(splitElement)
     }
 
+    // make sure that root when set once stays the same page.
     private fun fixRoot(splitElement: NioBTreeEntry?) {
         if (splitElement != null) {
             if (splitElement.key == EmptyPageEntry()) {
                 file.rootPageNumber = splitElement.childPageNumber!!
                 root = NioPageFilePage(file, file.rootPageNumber)
             } else {
-                val newRoot = file.newPage()
-                val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
-                firstRootElement.childPageNumber = root!!.number
-                newRoot.add(firstRootElement)
-                newRoot.add(splitElement)
-                file.rootPageNumber = newRoot.number
-                root = newRoot
-            }
-        } else if (root != null) {
-            val inner = ifEmptyInnerPageReturnFirstElement(root!!)
-            if (inner != null) {
-                val childPageNumber = inner.childPageNumber
-                if (childPageNumber != null) {
-                    file.freePage(root!!)
-                    root = NioPageFilePage(file, childPageNumber)
-                    file.rootPageNumber = childPageNumber
+                val tmp = root
+                if (tmp != null) {
+                    val newLeftChild = file.newPage()
+                    val leftChildEntries = getSortedEntries(tmp)
+                    for (e in leftChildEntries) {
+                        newLeftChild.add(e)
+                    }
+                    tmp.clear()
+                    val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
+                    firstRootElement.childPageNumber = newLeftChild.number
+                    tmp.add(firstRootElement)
+                    tmp.add(splitElement)
+                } else {
+                    throw AssertionError("expect root in Btree to be initialized")
                 }
             }
-
+        } else {
+            val tmp = root
+            if (tmp != null) {
+                val inner = ifEmptyInnerPageReturnFirstElement(tmp)
+                if (inner != null) {
+                    val childPageNumber = inner.childPageNumber
+                    if (childPageNumber != null) {
+                        val soloChild = NioPageFilePage(file, childPageNumber)
+                        tmp.clear()
+                        val leftChildEntries = getSortedEntries(soloChild)
+                        for (e in leftChildEntries) {
+                            tmp.add(e)
+                        }
+                        file.freePage(soloChild)
+                    }
+                }
+            } else {
+                throw AssertionError("expect root in Btree to be initialized")
+            }
         }
     }
 

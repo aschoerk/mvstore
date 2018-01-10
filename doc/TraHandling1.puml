@@ -1,0 +1,31 @@
+@startuml
+actor Reader as r
+actor Writer as w
+participant File as f
+participant WTra as wt
+participant RTra as rt
+participant Page as p
+participant UndoPage as up
+r -> f: newTra
+create rt
+f -> rt
+w -> f: newTra
+create wt
+f -> wt
+w -> f: w(page)
+f -> f: create(upage)
+f -> wt: store(upage)
+f -> p: write(tra)
+f -> p: write(content)
+f --> w
+r -> f: r(page)
+f -> p: readTra
+p -> wt
+f -> wt: undoInfo
+wt -> f: up
+f -> up: checkTra
+up -> f: t < rt
+f -> up: readContent
+up -> f: content
+f -> r: content
+@enduml

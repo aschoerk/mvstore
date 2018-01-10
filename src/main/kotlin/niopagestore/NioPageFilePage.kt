@@ -1,6 +1,7 @@
 package niopagestore
 
 import niopageentries.NioPageEntry
+import niopageobjects.INioPageFile
 import niopageobjects.NioPageFile
 import niopageobjects.PAGESIZE
 import kotlin.experimental.and
@@ -16,26 +17,30 @@ const val CHANGED_BY_TRA_INDEX = 16   // stores information about who changed th
 const val INDEX_ENTRY_SIZE = 4
 
 
-class NioPageFilePage(val file: NioPageFile, val offset: Long) {
+class NioPageFilePage(val file: INioPageFile, val offset: Long) {
     init {
         assert(offset > PAGESIZE,{"invalid offset: $offset first page in file reserved"})
         val pageNumber = (offset / PAGESIZE).toInt()
         assert(file.isUsed(pageNumber), {"trying to create already freed page"})
     }
-    constructor(file: NioPageFile, number: Int) : this(file, number.toLong() * PAGESIZE)
+    constructor(file: INioPageFile, number: Int) : this(file, number.toLong() * PAGESIZE)
     val number
         get() = (offset / PAGESIZE).toInt()
 
     init {
         if (file.getInt(offset) == 0) {
             // automatically initialize when coming from freespace
-            file.setShort(offset + FLAGS_INDEX, 0x4000)
-            file.setShort(offset + FREE_ENTRY_INDEX, 0)
-            file.setInt(offset + FREE_SPACE_INDEX, PAGESIZE.toInt() - END_OF_HEADER)
-            file.setInt(offset + AFTER_ELEMENT_INDEX, END_OF_HEADER)  // no payload there, ends immediately after the header
-            file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, PAGESIZE.toInt())  // no payload there, set after the page
-            file.setLong(offset + CHANGED_BY_TRA_INDEX, 0L)
+            clear()
         }
+    }
+
+    fun clear() {
+        file.setShort(offset + FLAGS_INDEX, 0x4000)
+        file.setShort(offset + FREE_ENTRY_INDEX, 0)
+        file.setInt(offset + FREE_SPACE_INDEX, PAGESIZE.toInt() - END_OF_HEADER)
+        file.setInt(offset + AFTER_ELEMENT_INDEX, END_OF_HEADER)  // no payload there, ends immediately after the header
+        file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, PAGESIZE.toInt())  // no payload there, set after the page
+        file.setLong(offset + CHANGED_BY_TRA_INDEX, 0L)
     }
 
     class IndexEntry(val idx: Short,

@@ -4,12 +4,8 @@
 
 package niopageobjects
 
-import niopagestore.INioBufferWithOffset
-import niopagestore.MMapper
-import niopagestore.NioBufferWithOffset
-import niopagestore.NioPageFilePage
+import niopagestore.*
 import org.agrona.concurrent.MappedResizeableBuffer
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 const val PAGESIZE = 8192L
@@ -27,7 +23,17 @@ const val FREEMAP_MAGIC = 0x16578954
 const val DATAPAGES_PER_FREESPACE_REGION = ((PAGESIZE - START_OF_FREESPACE_MAP) * 8).toInt()
 const val PAGES_PER_FREESPACE_REGION = DATAPAGES_PER_FREESPACE_REGION + 1
 
-class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBufferWithOffset(buffer, 0) {
+
+interface INioPageFile : INioBufferWithOffset {
+    var rootPageNumber: Int
+    fun newPage(): NioPageFilePage
+    fun freePage(page: NioPageFilePage)
+    fun usedPagesIterator(): Iterator<NioPageFilePage>
+    fun isUsed(pageNum: Int): Boolean
+    fun isFree(pageNum: Int): Boolean
+}
+
+class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBufferWithOffset(buffer, 0), INioBufferWithOffset, INioPageFile {
 
     init {
         if (getInt(FREESPACE_OFFSET) != FREEMAP_MAGIC) {
@@ -45,7 +51,7 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
         }
     }
 
-    var rootPageNumber
+    override var rootPageNumber
         get() = getInt(offset + ROOT_PAGE_OFFSET)
         set(value) = setInt(offset + ROOT_PAGE_OFFSET, value)
 
@@ -53,7 +59,7 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
     inline fun pageOffset(page: Long) = PAGESIZE * page
 
 
-    fun newPage(): NioPageFilePage {
+    override fun newPage(): NioPageFilePage {
         val pageNum = allocPage()
         if (pageNum == null)
             throw AssertionError("TODO: extend file")
@@ -61,9 +67,9 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
         return NioPageFilePage(this, pageNum)
     }
 
-    fun freePage(page: NioPageFilePage) = setFree(page.number)
+    override fun freePage(page: NioPageFilePage) = setFree(page.number)
 
-    fun usedPagesIterator(): Iterator<NioPageFilePage> {
+    override fun usedPagesIterator(): Iterator<NioPageFilePage> {
 
         return object : Iterator<NioPageFilePage> {
             var lastPageNumber = 0
@@ -107,8 +113,8 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
     }
 
 
-    var lastFreespaceOffset = FREESPACE_OFFSET
-    var lastByteOffset = 4L
+    private var lastFreespaceOffset = FREESPACE_OFFSET
+    private var lastByteOffset = 4L
 
     private fun allocPage() : Int? {
         (lastFreespaceOffset..(length-1) step PAGES_PER_FREESPACE_REGION * PAGESIZE).forEach({
@@ -144,11 +150,11 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
     private fun pageNumForOffset(freespaceOffset: Long): Int = (freespaceOffset / PAGESIZE).toInt()
 
 
-    fun isUsed(pageNum: Int): Boolean {
+    override fun isUsed(pageNum: Int): Boolean {
         return getByte(freespaceRegionOffset(pageNum) + freespaceByteOffset(pageNum)).toInt() and freespaceByteMask(pageNum) != 0
     }
 
-    fun isFree(pageNum: Int): Boolean {
+    override fun isFree(pageNum: Int): Boolean {
         return getByte(freespaceRegionOffset(pageNum) + freespaceByteOffset(pageNum)).toInt() and freespaceByteMask(pageNum) == 0
     }
 
@@ -181,16 +187,17 @@ fun freespaceByteOffset(pageNum: Int) : Long {
 fun freespaceByteMask(pageNum: Int) : Int = 1 shl (((pageNum - 1) % PAGES_PER_FREESPACE_REGION - 1) % 8)
 
 
-class NioTraFile(val file: NioPageFile) : INioBufferWithOffset {
-
+abstract class NioTraFile(val file: NioPageFile) : INioPageFile {
+    val b = file
     var startTime = java.lang.System.currentTimeMillis()
     val traCount = AtomicInteger(0)
 
     var threadLocal: ThreadLocal<TransactionInfo> = ThreadLocal()
+    val transactions = mutableMapOf<Long,TransactionInfo>()
 
     class TransactionInfo(val base: Int, val count: Int) {
 
-        val pageMap = HashMap<Int,Int>()
+        val undoMap = HashMap<Int,Int>()
 
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -210,6 +217,8 @@ class NioTraFile(val file: NioPageFile) : INioBufferWithOffset {
             return result
         }
 
+        val traNum: Long
+            get() = base.toLong() shl 32 or count.toLong()
 
     }
 
@@ -218,7 +227,9 @@ class NioTraFile(val file: NioPageFile) : INioBufferWithOffset {
             throw IllegalStateException("Transaction running")
         }
 
-        threadLocal.set(TransactionInfo((startTime and 0x4FFFFFF).toInt(), traCount.incrementAndGet()))
+        val transactionInfo = TransactionInfo(((startTime / 1000) and 0x4FFFFFFF).toInt(), traCount.incrementAndGet())
+        threadLocal.set(transactionInfo)
+        transactions[transactionInfo.traNum] = transactionInfo
     }
 
     fun commit() {
@@ -228,101 +239,102 @@ class NioTraFile(val file: NioPageFile) : INioBufferWithOffset {
         threadLocal.set(null)
     }
 
-    fun copyPageIfNecessary(idx: Long) : Long {
+    fun copyPageIfNecessary(idx: Long) {
         val pageNo = (idx / PAGESIZE).toInt()
         val transactionInfo = threadLocal.get()
         if (transactionInfo != null) {
-            if (!transactionInfo.pageMap.containsKey(pageNo)) {
-                val newPageNo = transactionInfo.pageMap[pageNo]
-                if (newPageNo != null)
-                    return newPageNo * PAGESIZE + idx - pageNo * PAGESIZE
-                else
-                    throw AssertionError("expected")
-            } else {
+            if (!transactionInfo.undoMap.containsKey(pageNo)) {
                 val newPage = file.newPage()
                 file.move(pageNo * PAGESIZE, newPage.offset, PAGESIZE.toInt())
-                transactionInfo.pageMap[pageNo] = newPage.number
-                return newPage.number * PAGESIZE + idx - pageNo * PAGESIZE
+                transactionInfo.undoMap[pageNo] = newPage.number
+                file.setLong(pageNo * PAGESIZE + CHANGED_BY_TRA_INDEX, transactionInfo.traNum)
             }
-        } else {
-            return idx
         }
     }
 
-    override fun getByte(idx: Long): Byte {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+    override fun getByte(idx: Long) = b.getByte(convertOffset(idx))
+
+    private fun convertOffset(idx: Long): Long {
+        var pageNo = (idx / PAGESIZE).toInt()
+
+        val transactionInfo = threadLocal.get()
+        if (transactionInfo != null) {
+            var lastTra = transactionInfo.traNum
+            var maxChange = Long.MAX_VALUE
+            do {
+                val lastPageChanger = file.getLong(pageNo * PAGESIZE + CHANGED_BY_TRA_INDEX)
+                if (lastPageChanger > transactionInfo.traNum) {
+                    val tinfo = transactions[lastPageChanger]
+                    if (tinfo == null)
+                        throw AssertionError("tinfo not found for reading preImage")
+                    val pno = tinfo.undoMap[pageNo]
+                    if (pno == null)
+                        throw AssertionError("expected page to be found in undomap of transaction")
+                    pageNo = pno
+                } else {
+                    return pageNo * PAGESIZE + idx % PAGESIZE
+                }
+                if (lastPageChanger >= maxChange) {
+                    throw AssertionError("not monoton distribution of traNums to preImages")
+                }
+                maxChange = lastPageChanger
+            } while (true)
+        }
+        return idx
     }
 
     override fun setByte(idx: Long, i: Byte) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        copyPageIfNecessary(idx)
+        b.setByte(convertOffset(idx), i)
     }
 
-    override fun getChar(idx: Long): Char {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-
+    override fun getChar(idx: Long) = b.getChar(idx)
     override fun setChar(idx: Long, c: Char) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        copyPageIfNecessary(idx)
+        b.setChar(convertOffset(idx), c)
     }
 
-    override fun getShort(idx: Long): Short {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-
+    override fun getShort(idx: Long) = b.getShort(convertOffset(idx))
     override fun setShort(idx: Long, i: Short) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        copyPageIfNecessary(idx)
+        b.setShort(convertOffset(idx), i)
     }
 
-    override fun getInt(idx: Long): Int {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-
+    override fun getInt(idx: Long) = b.getInt(convertOffset(idx))
     override fun setInt(idx: Long, i: Int) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        copyPageIfNecessary(idx)
+        b.setInt(convertOffset(idx), i)
     }
 
-    override fun getLong(idx: Long): Long {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-
+    override fun getLong(idx: Long) = b.getLong(convertOffset(idx))
     override fun setLong(idx: Long, i: Long) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        copyPageIfNecessary(idx)
+        b.setLong(convertOffset(idx), i)
     }
 
-    override fun getFloat(idx: Long): Float {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-
+    override fun getFloat(idx: Long) = b.getFloat(convertOffset(idx))
     override fun setFloat(idx: Long, f: Float) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        copyPageIfNecessary(idx)
+        b.setFloat(convertOffset(idx), f)
     }
 
-    override fun getDouble(idx: Long): Double {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-
+    override fun getDouble(idx: Long) = b.getDouble(convertOffset(idx))
     override fun setDouble(idx: Long, f: Double) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        copyPageIfNecessary(idx)
+        b.setDouble(convertOffset(idx), f)
     }
 
-    override fun getBoolean(idx: Long): Boolean {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
+    override fun getBoolean(idx: Long): Boolean = getByte(idx) != 0.toByte()
+    override fun setBoolean(idx: Long, b: Boolean) = setByte(idx, (if (b) 1 else 0).toByte())
 
-    override fun setBoolean(idx: Long, b: Boolean) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-
-    override fun getByteArray(idx: Long, ba: ByteArray) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-
+    override fun getByteArray(idx: Long, ba: ByteArray) = b.getByteArray(idx, ba)
     override fun setByteArray(idx: Long, ba: ByteArray) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        copyPageIfNecessary(idx)
+        b.setByteArray(convertOffset(idx), ba)
     }
 
     override fun move(from: Long, to: Long, size: Int) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        b.move(convertOffset(from), convertOffset(to), size)
     }
 }
 
