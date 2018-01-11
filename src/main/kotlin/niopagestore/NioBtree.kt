@@ -13,6 +13,7 @@ class NioBTreeEntry(val key: ComparableNioPageEntry, val values: ListPageEntry, 
 
     var childPageNumber: Int? = null  // if not null points to a page containing bigger keys then this
 
+
     // constructor(key: NioPageEntry) : this(key, null)
     override val length: Short
         get() = toShort(key.length + values.length + (if (childPageNumber != null) 4 else 0))
@@ -77,6 +78,12 @@ fun unmarshallEntry(page: NioPageFilePage, indexEntry: NioPageFilePage.IndexEntr
 
 class NioBTree(val file: INioPageFile, rootPage: Int) {
     var root = NioPageFilePage(file, rootPage)
+    var doCheck: Boolean = false
+        get() = field
+        set(doCheck) {
+            field = doCheck;
+        }
+
     init {
         if (!root.entries().hasNext()) {
             val leaf = file.newPage()
@@ -243,8 +250,10 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         val toInsert = NioBTreeEntry(key, value)
 
         insertAndFixRoot(toInsert, false)
-        val message = check()
-        if (message.length > 0) println(message)
+        if (doCheck) {
+            val message = check()
+            if (message.length > 0) println(message)
+        }
     }
 
     private fun insertAndFixRoot(toInsert: NioBTreeEntry, forceUnique: Boolean) {
@@ -636,17 +645,12 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
             insertAndFixRoot(e, true)
         }
 
-
-        val message = check()
-        if (message.length > 0) println(message)
-
-    }
-
-    /*
-    fun find(tx: TXIdentifier, entry: NioPageEntry) : Iterator<NioPageEntry> {
+        if (doCheck) {
+            val message = check()
+            if (message.length > 0) println(message)
+        }
 
     }
-    */
 
     fun iterator(tx: TXIdentifier): Iterator<NioPageEntry> {
 
