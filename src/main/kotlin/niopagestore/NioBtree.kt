@@ -13,12 +13,6 @@ class NioBTreeEntry(val key: ComparableNioPageEntry, val values: ListPageEntry, 
 
     var childPageNumber: Int? = null  // if not null points to a page containing bigger keys then this
 
-    val isInnerNode
-        get() = childPageNumber != null
-
-    val isLeafNode
-        get() = !isInnerNode
-
     // constructor(key: NioPageEntry) : this(key, null)
     override val length: Short
         get() = toShort(key.length + values.length + (if (childPageNumber != null) 4 else 0))
@@ -81,8 +75,22 @@ fun unmarshallEntry(page: NioPageFilePage, indexEntry: NioPageFilePage.IndexEntr
     return result
 }
 
-class NioBTree(val file: INioPageFile) {
-    var root: NioPageFilePage? = null
+class NioBTree(val file: INioPageFile, rootPage: Int) {
+    var root = NioPageFilePage(file, rootPage)
+    init {
+        if (!root.entries().hasNext()) {
+            val leaf = file.newPage()
+            val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
+            firstRootElement.childPageNumber = leaf.number
+            root.add(firstRootElement)
+        } else {
+            val rootEntries = getSortedEntries(root)
+            assert (rootEntries.size > 0)
+            assert (rootEntries[0].childPageNumber != null && rootEntries[0].key == EmptyPageEntry())
+            val result = root.checkDataPage()
+            assert (result.length == 0)
+        }
+    }
 
     private fun insert(page: NioPageFilePage, toInsert: NioBTreeEntry, forceUnique: Boolean): NioBTreeEntry? {
         val len = toInsert.length
@@ -106,14 +114,14 @@ class NioBTree(val file: INioPageFile) {
             }
         } else
             if (greater == null && pageEntries.size == 0
-                    || greater == null && pageEntries.first().isLeafNode
-                    || greater != null && greater.isLeafNode) {
+                    || greater == null && pageEntries.first().childPageNumber == null
+                    || greater != null && greater.childPageNumber == null) {
                 return insertAndSplitIfNecessary(page, toInsert, toInsertIndex, pageEntries, false)
             } else {
                 // found in inner Node
                 assert(
-                        greater == null && pageEntries.first().isInnerNode
-                                || greater != null && greater.isInnerNode)
+                        greater == null && pageEntries.first().childPageNumber != null
+                                || greater != null && greater.childPageNumber != null)
                 assert(toInsertIndex > 0)  // leftmost element must be smaller than all
                 if (toInsert.childPageNumber == null) {
                     // need to go until found position in leaf
@@ -229,59 +237,41 @@ class NioBTree(val file: INioPageFile) {
         }
     }
 
-    fun getPrepareRoot(): NioPageFilePage {
-        val result =
-                if (!file.usedPagesIterator().hasNext()) {
-                    val result = file.newPage()
-                    val leaf = file.newPage()
-                    val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
-                    firstRootElement.childPageNumber = leaf.number
-                    result.add(firstRootElement)
-                    file.rootPageNumber = result.number
-                    result
-                } else {
-                    NioPageFilePage(file, file.rootPageNumber)
-                }
-        root = result
-        return result
-    }
+
 
     fun insert(tx: TXIdentifier, key: ComparableNioPageEntry, value: NioPageEntry) {
         val toInsert = NioBTreeEntry(key, value)
 
         insertAndFixRoot(toInsert, false)
-        /*val message = check()
-        if (message.length > 0) println(message)*/
+        val message = check()
+        if (message.length > 0) println(message)
     }
 
     private fun insertAndFixRoot(toInsert: NioBTreeEntry, forceUnique: Boolean) {
-        val splitElement = insert(getPrepareRoot(), toInsert, forceUnique)
+        val splitElement = insert(root, toInsert, forceUnique)
         fixRoot(splitElement)
     }
 
     // make sure that root when set once stays the same page.
     private fun fixRoot(splitElement: NioBTreeEntry?) {
         if (splitElement != null) {
-            if (splitElement.key == EmptyPageEntry()) {
-                file.rootPageNumber = splitElement.childPageNumber!!
-                root = NioPageFilePage(file, file.rootPageNumber)
-            } else {
-                val tmp = root
-                if (tmp != null) {
-                    val newLeftChild = file.newPage()
-                    val leftChildEntries = getSortedEntries(tmp)
-                    for (e in leftChildEntries) {
-                        newLeftChild.add(e)
-                    }
-                    tmp.clear()
-                    val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
-                    firstRootElement.childPageNumber = newLeftChild.number
-                    tmp.add(firstRootElement)
-                    tmp.add(splitElement)
-                } else {
-                    throw AssertionError("expect root in Btree to be initialized")
+            assert (splitElement.key != EmptyPageEntry())
+            val tmp = root
+            if (tmp != null) {
+                val newLeftChild = file.newPage()
+                val leftChildEntries = getSortedEntries(tmp)
+                for (e in leftChildEntries) {
+                    newLeftChild.add(e)
                 }
+                tmp.clear()
+                val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
+                firstRootElement.childPageNumber = newLeftChild.number
+                tmp.add(firstRootElement)
+                tmp.add(splitElement)
+            } else {
+                throw AssertionError("expect root in Btree to be initialized")
             }
+
         } else {
             val tmp = root
             if (tmp != null) {
@@ -290,12 +280,15 @@ class NioBTree(val file: INioPageFile) {
                     val childPageNumber = inner.childPageNumber
                     if (childPageNumber != null) {
                         val soloChild = NioPageFilePage(file, childPageNumber)
-                        tmp.clear()
-                        val leftChildEntries = getSortedEntries(soloChild)
-                        for (e in leftChildEntries) {
-                            tmp.add(e)
+                        val soloChildEntries = getSortedEntries(soloChild)
+                        assert(soloChildEntries.size > 0)
+                        if (soloChildEntries[0].childPageNumber != null) {
+                            tmp.clear()
+                            for (e in soloChildEntries) {
+                                tmp.add(e)
+                            }
+                            file.freePage(soloChild)
                         }
-                        file.freePage(soloChild)
                     }
                 }
             } else {
@@ -411,7 +404,7 @@ class NioBTree(val file: INioPageFile) {
                                     for (e in child.indexEntries()) {
                                         if (!e.deleted) {
                                             val entry = unmarshallEntry(child, e)
-                                            if (entry.isInnerNode && entry.key == EmptyPageEntry()) {
+                                            if (entry.childPageNumber != null && entry.key == EmptyPageEntry()) {
                                                 entryForReplacement.childPageNumber = entry.childPageNumber
                                             } else if (leftPage.allocationFitsIntoPage(entry.length)) {
                                                 leftPage.add(entry)
@@ -509,7 +502,7 @@ class NioBTree(val file: INioPageFile) {
             for (e in rightPage.indexEntries()) {
                 if (!e.deleted) {
                     val entry = unmarshallEntry(rightPage, e)
-                    if (entry.isInnerNode && entry.key == EmptyPageEntry()) {
+                    if (entry.childPageNumber != null && entry.key == EmptyPageEntry()) {
                         rightEntry.childPageNumber = entry.childPageNumber
                     } else if (leftPage.allocationFitsIntoPage(entry.length)) {
                         leftPage.add(entry)
@@ -637,16 +630,16 @@ class NioBTree(val file: INioPageFile) {
 
     fun remove(tx: TXIdentifier, key: ComparableNioPageEntry, value: NioPageEntry) {
         val toReInsert = mutableListOf<NioBTreeEntry>()
-        val splitElement = delete(getPrepareRoot(), key, value, toReInsert, 0).second
+        val splitElement = delete(root, key, value, toReInsert, 0).second
         fixRoot(splitElement)
         for (e in toReInsert) {
             insertAndFixRoot(e, true)
         }
 
-        /*
+
         val message = check()
         if (message.length > 0) println(message)
-        */
+
     }
 
     /*
@@ -713,7 +706,52 @@ class NioBTree(val file: INioPageFile) {
             }
 
         }
+    }
 
+    fun find(page: NioPageFilePage, key: ComparableNioPageEntry) : NioBTreeEntry? {
+        val entries = getSortedEntries(page)
+        if (entries.size == 0)
+            return null
+        val res = entries.binarySearch { it.key.compareTo(key) }
+        if (res >= 0) {
+            return entries[res]
+        } else {
+            if (entries[0].childPageNumber == null) {
+                return null
+            } else {
+                assert(res < -1)
+                val childPageNumber = entries[-res - 2].childPageNumber
+                if (childPageNumber != null)
+                    return find(NioPageFilePage(file, childPageNumber), key)
+                else
+                    return null
+            }
+        }
+    }
+
+    fun find(key: ComparableNioPageEntry) : List<NioPageEntry>? {
+        var res = find(root, key)
+        if (res != null) {
+            if (res.values is ListPageEntry) {
+                return res.values.a
+            } else {
+                return listOf(res.values)
+            }
+        } else
+            return null
+    }
+
+    fun findSingle(key: ComparableNioPageEntry) : NioPageEntry? {
+        var tmp = find(key)
+        if (tmp != null) {
+            assert (tmp.size <= 1)
+            if (tmp.size == 1) {
+                return tmp[0]
+            } else {
+                return null
+            }
+        } else
+            return null
     }
 
     fun check(): String {

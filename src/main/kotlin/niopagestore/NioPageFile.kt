@@ -10,9 +10,9 @@ import java.util.concurrent.atomic.AtomicInteger
 
 const val PAGESIZE = 8192L
 
-const val PAGE_MAGIC = -0x12568762
+
 // information in first page of file
-const val ROOT_PAGE_OFFSET = 32L
+
 const val FREESPACE_OFFSET = PAGESIZE
 
 // structure and contents of freespace-page
@@ -25,38 +25,29 @@ const val PAGES_PER_FREESPACE_REGION = DATAPAGES_PER_FREESPACE_REGION + 1
 
 
 interface INioPageFile : INioBufferWithOffset {
-    var rootPageNumber: Int
     fun newPage(): NioPageFilePage
     fun freePage(page: NioPageFilePage)
-    fun usedPagesIterator(): Iterator<NioPageFilePage>
     fun isUsed(pageNum: Int): Boolean
     fun isFree(pageNum: Int): Boolean
 }
 
-class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBufferWithOffset(buffer, 0), INioBufferWithOffset, INioPageFile {
 
-    init {
-        if (getInt(FREESPACE_OFFSET) != FREEMAP_MAGIC) {
-            (FREESPACE_OFFSET..(length-1) step PAGES_PER_FREESPACE_REGION * PAGESIZE).forEach({
-                assert(getInt(it) != FREEMAP_MAGIC)
-            })
-            (FREESPACE_OFFSET..(length-1) step PAGES_PER_FREESPACE_REGION * PAGESIZE).forEach({
-                setInt(it, FREEMAP_MAGIC)  // init to magic to be able to identify already initialized file
-                (it+4..it+PAGESIZE-1).forEach({setInt(it, 0)}) // make everything empty
-            })
-        } else {
-            (FREESPACE_OFFSET..(length-1) step PAGES_PER_FREESPACE_REGION * PAGESIZE).forEach({
-                assert(getInt(it) == FREEMAP_MAGIC)
-            })
-        }
+open class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBufferWithOffset(buffer, 0), INioBufferWithOffset, INioPageFile {
+    fun checkFreeSpace() {
+        (FREESPACE_OFFSET..(length-1) step PAGES_PER_FREESPACE_REGION * PAGESIZE).forEach({
+            assert(getInt(it) == FREEMAP_MAGIC)
+        })
     }
 
-    override var rootPageNumber
-        get() = getInt(offset + ROOT_PAGE_OFFSET)
-        set(value) = setInt(offset + ROOT_PAGE_OFFSET, value)
-
-
-    inline fun pageOffset(page: Long) = PAGESIZE * page
+    fun initFreeSpaceSafely() {
+        (FREESPACE_OFFSET..(length-1) step PAGES_PER_FREESPACE_REGION * PAGESIZE).forEach({
+            assert(getInt(it) != FREEMAP_MAGIC)
+        })
+        (FREESPACE_OFFSET..(length-1) step PAGES_PER_FREESPACE_REGION * PAGESIZE).forEach({
+            setInt(it, FREEMAP_MAGIC)  // init to magic to be able to identify already initialized file
+            (it+4..it+PAGESIZE-1 step 4).forEach({setInt(it, 0)}) // make everything empty
+        })
+    }
 
 
     override fun newPage(): NioPageFilePage {
@@ -69,7 +60,7 @@ class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBuf
 
     override fun freePage(page: NioPageFilePage) = setFree(page.number)
 
-    override fun usedPagesIterator(): Iterator<NioPageFilePage> {
+    fun usedPagesIterator(): Iterator<NioPageFilePage> {
 
         return object : Iterator<NioPageFilePage> {
             var lastPageNumber = 0
@@ -186,18 +177,16 @@ fun freespaceByteOffset(pageNum: Int) : Long {
 
 fun freespaceByteMask(pageNum: Int) : Int = 1 shl (((pageNum - 1) % PAGES_PER_FREESPACE_REGION - 1) % 8)
 
-
-abstract class NioTraFile(val file: NioPageFile) : INioPageFile {
-    val b = file
+object MVCC {
     var startTime = java.lang.System.currentTimeMillis()
     val traCount = AtomicInteger(0)
-
     var threadLocal: ThreadLocal<TransactionInfo> = ThreadLocal()
     val transactions = mutableMapOf<Long,TransactionInfo>()
 
     class TransactionInfo(val base: Int, val count: Int) {
 
         val undoMap = HashMap<Int,Int>()
+        val freedPages = HashSet<Int>()
 
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -239,9 +228,22 @@ abstract class NioTraFile(val file: NioPageFile) : INioPageFile {
         threadLocal.set(null)
     }
 
+    fun current() = threadLocal.get()
+
+    operator fun get(traId: Long) = transactions[traId]
+
+}
+
+
+
+class MVCCFile(val file: NioPageFile) : INioPageFile {
+
+    val b = file
+
+
     fun copyPageIfNecessary(idx: Long) {
         val pageNo = (idx / PAGESIZE).toInt()
-        val transactionInfo = threadLocal.get()
+        val transactionInfo = MVCC.current()
         if (transactionInfo != null) {
             if (!transactionInfo.undoMap.containsKey(pageNo)) {
                 val newPage = file.newPage()
@@ -257,14 +259,14 @@ abstract class NioTraFile(val file: NioPageFile) : INioPageFile {
     private fun convertOffset(idx: Long): Long {
         var pageNo = (idx / PAGESIZE).toInt()
 
-        val transactionInfo = threadLocal.get()
+        val transactionInfo = MVCC.current()
         if (transactionInfo != null) {
             var lastTra = transactionInfo.traNum
             var maxChange = Long.MAX_VALUE
             do {
                 val lastPageChanger = file.getLong(pageNo * PAGESIZE + CHANGED_BY_TRA_INDEX)
                 if (lastPageChanger > transactionInfo.traNum) {
-                    val tinfo = transactions[lastPageChanger]
+                    val tinfo = MVCC[lastPageChanger]
                     if (tinfo == null)
                         throw AssertionError("tinfo not found for reading preImage")
                     val pno = tinfo.undoMap[pageNo]
@@ -336,6 +338,33 @@ abstract class NioTraFile(val file: NioPageFile) : INioPageFile {
     override fun move(from: Long, to: Long, size: Int) {
         b.move(convertOffset(from), convertOffset(to), size)
     }
+
+    override fun newPage(): NioPageFilePage {
+        return file.newPage()
+    }
+
+    override fun freePage(page: NioPageFilePage) {
+        val transactionInfo = MVCC.current()
+        if (transactionInfo != null) {
+            transactionInfo.freedPages.add(page.number)
+        } else {
+            file.freePage(page)
+        }
+    }
+
+    override fun isUsed(pageNum: Int): Boolean {
+        val transactionInfo = MVCC.current()
+        if (transactionInfo != null) {
+            if (transactionInfo.freedPages.contains(pageNum))
+                return false
+        }
+        return file.isUsed(pageNum)
+    }
+
+    override fun isFree(pageNum: Int): Boolean {
+        return !isUsed(pageNum)
+    }
+
 }
 
 

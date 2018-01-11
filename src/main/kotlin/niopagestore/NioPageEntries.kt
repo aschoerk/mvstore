@@ -6,11 +6,12 @@ import niopageobjects.INioPageFile
 import niopagestore.NioPageFilePage
 import niopagestore.NioPageIndexEntry
 import niopageobjects.PAGESIZE
+import java.io.InvalidClassException
 import java.util.*
 
 enum class NioPageEntryType {
     DUMMY, BYTE_ARRAY, PAGEENTRY_LIST, CHAR, BYTE,
-    SHORT, INT, LONG, FLOAT, DOUBLE, STRING, ARRAY, BOOLEAN, EMPTY, ELSE }
+    SHORT, INT, LONG, FLOAT, DOUBLE, STRING, ARRAY, BOOLEAN, EMPTY, STRUCT, ELSE }
 
 
 interface NioPageEntry  {
@@ -54,7 +55,7 @@ abstract class NioPageNumberEntryBase(val number: Number) {
 
 }
 
-class ListPageEntry(c: Collection<NioPageEntry>) : ComparableNioPageEntry {
+open class ListPageEntry(c: Collection<NioPageEntry>) : ComparableNioPageEntry {
     constructor(a: Array<NioPageEntry>) : this(a.toList())
     val a = c.toMutableList()
     override fun compareTo(other: ComparableNioPageEntry): Int {
@@ -80,7 +81,9 @@ class ListPageEntry(c: Collection<NioPageEntry>) : ComparableNioPageEntry {
     override val length: Short
         get() = toShort(1 + 2 + a.sumBy { e -> e.length.toInt() })
     override val type: NioPageEntryType
-        get() = PAGEENTRY_LIST //To change initializer of created properties use File | Settings | File Templates.
+        get() = PAGEENTRY_LIST
+
+    operator fun get(i: Int) = a[i]
 
     override fun marshalTo(file: INioPageFile, offset: Long) {
         file.setByte(offset, PAGEENTRY_LIST.ordinal.toByte())
@@ -108,6 +111,7 @@ class ListPageEntry(c: Collection<NioPageEntry>) : ComparableNioPageEntry {
     }
 
     fun contains(entry: NioPageEntry) = a.contains(entry)
+
     override fun toString(): String {
         return "ListPageEntry(a=$a)"
     }
@@ -343,11 +347,35 @@ class ByteArrayPageEntry(val ba: ByteArray) : ComparableNioPageEntry {
 
 }
 
+
 fun unmarshalFrom(file: INioPageFile, offset: NioPageIndexEntry): NioPageEntry {
     val pn = offset.entryOffset / PAGESIZE
     val page = NioPageFilePage(file, pn.toInt())
     return unmarshalFrom(file, page.offset(offset))
 }
+
+
+
+fun<T> entryFrom(v: T) : NioPageEntry {
+    when {
+        v is Int -> return IntPageEntry(v)
+        v is Double -> return DoublePageEntry(v)
+        v is String -> return StringPageEntry(v)
+        v is Byte -> return BytePageEntry(v)
+        v is Short -> return ShortPageEntry(v)
+        v is Char -> return CharPageEntry(v)
+        v is Boolean -> return BooleanPageEntry(v)
+        v is Long -> return LongPageEntry(v)
+        v is Float -> return FloatPageEntry(v)
+        v is ByteArray -> return ByteArrayPageEntry(v)
+        v is List<*> -> return ListPageEntry(v.map { entryFrom(it) })
+        v == null -> return EmptyPageEntry()
+        else ->
+                throw InvalidClassException(v.toString(), "entryFrom")
+
+    }
+}
+
 
 fun unmarshalFrom(file: INioPageFile, offset: Long): ComparableNioPageEntry {
     val type = values()[file.getByte(offset).toInt()]
@@ -359,6 +387,7 @@ fun unmarshalFrom(file: INioPageFile, offset: Long): ComparableNioPageEntry {
         LONG -> return LongPageEntry(file.getLong(offset+1))
         FLOAT -> return FloatPageEntry(file.getFloat(offset+1))
         DOUBLE -> return DoublePageEntry(file.getDouble(offset+1))
+        BOOLEAN -> return BooleanPageEntry(file.getByte(offset+1) != 0.toByte())
         STRING -> {
             val len = file.getShort(offset+1)
             val result = ByteArray(len.toInt())
