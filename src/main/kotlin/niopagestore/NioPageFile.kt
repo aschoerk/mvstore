@@ -171,7 +171,7 @@ fun freespaceRegionOffset(pageNum: Int) = (freespaceRegion(pageNum) * PAGES_PER_
 
 fun freespaceByteOffset(pageNum: Int) : Long {
     if (pageNum <= 0 || (pageNum - 1) % PAGES_PER_FREESPACE_REGION == 0)
-        throw AssertionError("Page: $pageNum is no datapage")
+        throw AssertionError("pg.Page: $pageNum is no datapage")
     return ((pageNum * PAGESIZE) - freespaceRegionOffset(pageNum) - PAGESIZE) / (PAGESIZE * 8) + 4 // freespace-page itself
 }
 

@@ -4,7 +4,7 @@ actor Writer as w
 participant File as f
 participant WTra as wt
 participant RTra as rt
-participant Page as p
+participant pg.Page as p
 participant UndoPage as up
 r -> f: newTra
 create rt

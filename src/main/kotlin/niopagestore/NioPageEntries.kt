@@ -23,21 +23,21 @@ interface ComparableMMapPageEntry : MMapPageEntry, Comparable<ComparableMMapPage
 
 }
 
-abstract class NioPageNumberEntryBase(val number: Number) {
+abstract class MMapPageNumberEntryBase(val number: Number) {
     fun compareTo(other: ComparableMMapPageEntry): Int {
         if (this == other) return 0
-        if (other !is NioPageNumberEntryBase) {
+        if (other !is MMapPageNumberEntryBase) {
             if (other is EmptyPageEntry)
                 return 1
             return hashCode().compareTo(other.hashCode())
         }
         else
-            return (this.number.toDouble().compareTo((other as NioPageNumberEntryBase).number.toDouble()))
+            return (this.number.toDouble().compareTo((other as MMapPageNumberEntryBase).number.toDouble()))
     }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (other !is NioPageNumberEntryBase) return false
+        if (other !is MMapPageNumberEntryBase) return false
 
         if (number.toDouble() != other.number.toDouble()) return false
 
@@ -117,7 +117,7 @@ open class ListPageEntry(c: Collection<MMapPageEntry>) : ComparableMMapPageEntry
 
 }
 
-class BooleanPageEntry(val v: Boolean) : ComparableMMapPageEntry, NioPageNumberEntryBase(if (v) 1 else 0) {
+class BooleanPageEntry(val v: Boolean) : ComparableMMapPageEntry, MMapPageNumberEntryBase(if (v) 1 else 0) {
     override val length: Short
         get() = 2
     override val type: NioPageEntryType
@@ -161,7 +161,7 @@ class EmptyPageEntry : ComparableMMapPageEntry {
 
 }
 
-class BytePageEntry(val v: Byte) : ComparableMMapPageEntry, NioPageNumberEntryBase(v) {
+class BytePageEntry(val v: Byte) : ComparableMMapPageEntry, MMapPageNumberEntryBase(v) {
     override val length: Short
         get() = 2
     override val type: NioPageEntryType
@@ -173,7 +173,7 @@ class BytePageEntry(val v: Byte) : ComparableMMapPageEntry, NioPageNumberEntryBa
     }
 }
 
-class CharPageEntry(val v: Char) : ComparableMMapPageEntry, NioPageNumberEntryBase(v.toByte()) {
+class CharPageEntry(val v: Char) : ComparableMMapPageEntry, MMapPageNumberEntryBase(v.toByte()) {
     constructor(s: Short) : this(s.toChar())
     override val length: Short
         get() = 3
@@ -232,7 +232,7 @@ class StringPageEntry(val s: String) : ComparableMMapPageEntry {
 
 }
 
-class ShortPageEntry(val v: Short) : ComparableMMapPageEntry, NioPageNumberEntryBase(v) {
+class ShortPageEntry(val v: Short) : ComparableMMapPageEntry, MMapPageNumberEntryBase(v) {
     override val length: Short
         get() = 3
     override val type: NioPageEntryType
@@ -244,7 +244,7 @@ class ShortPageEntry(val v: Short) : ComparableMMapPageEntry, NioPageNumberEntry
     }
 }
 
-class IntPageEntry(val v: Int) : ComparableMMapPageEntry, NioPageNumberEntryBase(v) {
+class IntPageEntry(val v: Int) : ComparableMMapPageEntry, MMapPageNumberEntryBase(v) {
     override val length: Short
         get() = 5
     override val type: NioPageEntryType
@@ -257,7 +257,7 @@ class IntPageEntry(val v: Int) : ComparableMMapPageEntry, NioPageNumberEntryBase
 
 }
 
-class LongPageEntry(val v: Long) : ComparableMMapPageEntry, NioPageNumberEntryBase(v) {
+class LongPageEntry(val v: Long) : ComparableMMapPageEntry, MMapPageNumberEntryBase(v) {
     override val length: Short
         get() = 9
     override val type: NioPageEntryType
@@ -270,7 +270,7 @@ class LongPageEntry(val v: Long) : ComparableMMapPageEntry, NioPageNumberEntryBa
 
 }
 
-class FloatPageEntry(val f: Float) : ComparableMMapPageEntry, NioPageNumberEntryBase(f) {
+class FloatPageEntry(val f: Float) : ComparableMMapPageEntry, MMapPageNumberEntryBase(f) {
     override val length: Short
         get() = 5
     override val type: NioPageEntryType
@@ -282,7 +282,7 @@ class FloatPageEntry(val f: Float) : ComparableMMapPageEntry, NioPageNumberEntry
     }
 }
 
-class DoublePageEntry(val d: Double) : ComparableMMapPageEntry, NioPageNumberEntryBase(d) {
+class DoublePageEntry(val d: Double) : ComparableMMapPageEntry, MMapPageNumberEntryBase(d) {
     override val length: Short
         get() = 9
     override val type: NioPageEntryType

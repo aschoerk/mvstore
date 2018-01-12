@@ -770,10 +770,10 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
     override fun check(): String {
         fun checkPage(page: NioPageFilePage, smallerEntryKey: ComparableMMapPageEntry, biggerEntryKey: ComparableMMapPageEntry?, done: MutableSet<Int>, result: StringBuffer) {
             result.append(page.checkDataPage())
-            // println("Doing Page: ${page.number}")
+            // println("Doing pg.Page: ${page.number}")
             val entries = getSortedEntries(page)
             if (entries.size == 0) {
-                // result.append("page(${page.number}):Empty Leaf Page\n")
+                // result.append("page(${page.number}):Empty Leaf pg.Page\n")
             } else {
                 val firstChildPageNumber = entries[0].childPageNumber
                 if (firstChildPageNumber != null) {
@@ -846,7 +846,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
                     done.add(page.number)
                 }
             }
-            // result.append("Ready  Page: ${page.number}\n")
+            // result.append("Ready  pg.Page: ${page.number}\n")
         }
 
         val result = StringBuffer()

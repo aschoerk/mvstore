@@ -23,7 +23,7 @@ import org.h2.table.Column;
 public class ValueNull extends Value {
 
     /**
-     * The main NULL instance.
+     * The pg.main NULL instance.
      */
     public static final ValueNull INSTANCE = new ValueNull();
 
