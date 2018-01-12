@@ -1,8 +1,7 @@
 package niopagestore
 
-import niopageentries.NioPageEntry
+import niopageentries.MMapPageEntry
 import niopageobjects.INioPageFile
-import niopageobjects.NioPageFile
 import niopageobjects.PAGESIZE
 import kotlin.experimental.and
 
@@ -310,7 +309,7 @@ class NioPageFilePage(val file: INioPageFile, val offset: Long) {
 
     fun freeSpace() = file.getInt(offset + FREE_SPACE_INDEX)
 
-    fun add(entry: NioPageEntry): NioPageIndexEntry {
+    fun add(entry: MMapPageEntry): NioPageIndexEntry {
         if (!allocationFitsIntoPage(entry.length))
             throw IndexOutOfBoundsException("can't add new entry in this page")
         val indexEntry = allocate(entry.length)

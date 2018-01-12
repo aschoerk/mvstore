@@ -308,7 +308,7 @@ class NioPageFileTest {
     }
 
 
-    private fun createTestEntries(): MutableList<ComparableNioPageEntry> {
+    private fun createTestEntries(): MutableList<ComparableMMapPageEntry> {
         val testEntries = mutableListOf(
                 BytePageEntry(11),
                 ShortPageEntry(-23),
@@ -326,7 +326,7 @@ class NioPageFileTest {
         return testEntries
     }
 
-    private fun writeReadInPageCheck(page: NioPageFilePage, entry: NioPageEntry) {
+    private fun writeReadInPageCheck(page: NioPageFilePage, entry: MMapPageEntry) {
         val idx1 = page.add(entry)
         val read = unmarshalFrom(file!!, page.offset(idx1))
         page.remove(idx1)

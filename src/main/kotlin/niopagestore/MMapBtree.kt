@@ -3,13 +3,12 @@ package niopagestore
 import nioobjects.TXIdentifier
 import niopageentries.*
 import niopageobjects.INioPageFile
-import niopageobjects.NioPageFile
 import niopageobjects.PAGESIZE
 import java.util.*
 
 
-class NioBTreeEntry(val key: ComparableNioPageEntry, val values: ListPageEntry, val indexEntry: NioPageFilePage.IndexEntry?) : NioPageEntry {
-    constructor(key: ComparableNioPageEntry, value: NioPageEntry) : this(key, ListPageEntry(mutableListOf(value)), null)
+class MMapBTreeEntry(val key: ComparableMMapPageEntry, val values: ListPageEntry, val indexEntry: NioPageFilePage.IndexEntry?) : MMapPageEntry {
+    constructor(key: ComparableMMapPageEntry, value: MMapPageEntry) : this(key, ListPageEntry(mutableListOf(value)), null)
 
     var childPageNumber: Int? = null  // if not null points to a page containing bigger keys then this
 
@@ -32,7 +31,7 @@ class NioBTreeEntry(val key: ComparableNioPageEntry, val values: ListPageEntry, 
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (other !is NioBTreeEntry) return false
+        if (other !is MMapBTreeEntry) return false
 
         if (key != other.key) return false
         if (values != other.values) return false
@@ -46,11 +45,11 @@ class NioBTreeEntry(val key: ComparableNioPageEntry, val values: ListPageEntry, 
         return result
     }
 
-    fun addValue(value: NioPageEntry) {
+    fun addValue(value: MMapPageEntry) {
         values.a.add(value)
     }
 
-    fun removeValue(value: NioPageEntry) {
+    fun removeValue(value: MMapPageEntry) {
         values.a.remove(value)
     }
 
@@ -60,14 +59,14 @@ class NioBTreeEntry(val key: ComparableNioPageEntry, val values: ListPageEntry, 
 
 }
 
-fun unmarshallEntry(page: NioPageFilePage, indexEntry: NioPageFilePage.IndexEntry): NioBTreeEntry {
+fun unmarshallEntry(page: NioPageFilePage, indexEntry: NioPageFilePage.IndexEntry): MMapBTreeEntry {
     assert(!indexEntry.deleted)
     val offset = indexEntry.offsetInFile(page)
     val key = unmarshalFrom(page.file, offset)
     val values = unmarshalFrom(page.file, offset + key.length)
     val keyValueLen = key.length + values.length
     values as ListPageEntry
-    val result = NioBTreeEntry(key, values, indexEntry)
+    val result = MMapBTreeEntry(key, values, indexEntry)
     if (keyValueLen < indexEntry.len) {
         assert(indexEntry.len - keyValueLen == 4)
         val childpage = page.file.getInt(offset + keyValueLen)
@@ -76,9 +75,19 @@ fun unmarshallEntry(page: NioPageFilePage, indexEntry: NioPageFilePage.IndexEntr
     return result
 }
 
-class NioBTree(val file: INioPageFile, rootPage: Int) {
+interface IMMapBTree {
+    var doCheck: Boolean
+    fun insert(tx: TXIdentifier, key: ComparableMMapPageEntry, value: MMapPageEntry)
+    fun remove(tx: TXIdentifier, key: ComparableMMapPageEntry, value: MMapPageEntry)
+    fun iterator(tx: TXIdentifier): Iterator<MMapPageEntry>
+    fun find(key: ComparableMMapPageEntry) : List<MMapPageEntry>?
+    fun findSingle(key: ComparableMMapPageEntry) : MMapPageEntry?
+    fun check(): String
+}
+
+class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
     var root = NioPageFilePage(file, rootPage)
-    var doCheck: Boolean = false
+    override var doCheck: Boolean = false
         get() = field
         set(doCheck) {
             field = doCheck;
@@ -87,7 +96,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
     init {
         if (!root.entries().hasNext()) {
             val leaf = file.newPage()
-            val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
+            val firstRootElement = MMapBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
             firstRootElement.childPageNumber = leaf.number
             root.add(firstRootElement)
         } else {
@@ -99,7 +108,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         }
     }
 
-    private fun insert(page: NioPageFilePage, toInsert: NioBTreeEntry, forceUnique: Boolean): NioBTreeEntry? {
+    private fun insert(page: NioPageFilePage, toInsert: MMapBTreeEntry, forceUnique: Boolean): MMapBTreeEntry? {
         val len = toInsert.length
         val pageEntries = getSortedEntries(page)
 
@@ -159,8 +168,8 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         return null
     }
 
-    private fun getSortedEntries(page: NioPageFilePage): MutableList<NioBTreeEntry> {
-        val pageEntries = mutableListOf<NioBTreeEntry>()
+    private fun getSortedEntries(page: NioPageFilePage): MutableList<MMapBTreeEntry> {
+        val pageEntries = mutableListOf<MMapBTreeEntry>()
         page.indexEntries().forEach {
             if (!it.deleted)
                 pageEntries.add(unmarshallEntry(page, it))
@@ -170,7 +179,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         return pageEntries
     }
 
-    private fun ifEmptyInnerPageReturnFirstElement(page: NioPageFilePage): NioBTreeEntry? {
+    private fun ifEmptyInnerPageReturnFirstElement(page: NioPageFilePage): MMapBTreeEntry? {
         if (page.indexEntries().asSequence().count({ !it.deleted }) == 1) {
             val result = unmarshallEntry(page,
                     page.indexEntries()
@@ -185,10 +194,10 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
     }
 
     private fun insertAndSplitIfNecessary(page: NioPageFilePage,
-                                          toInsert: NioBTreeEntry,
+                                          toInsert: MMapBTreeEntry,
                                           toInsertIndex: Int,
-                                          pageEntries: MutableList<NioBTreeEntry>,
-                                          isInnerPage: Boolean): NioBTreeEntry? {
+                                          pageEntries: MutableList<MMapBTreeEntry>,
+                                          isInnerPage: Boolean): MMapBTreeEntry? {
         if (page.allocationFitsIntoPage((toInsert.length + PAGESIZE / 3).toInt())
         /* || page.allocationFitsIntoPage(toInsert.length) && pageEntries.size <= 10*/) {
             page.add(toInsert)
@@ -197,7 +206,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
             pageEntries.add(toInsertIndex, toInsert)
             val completeLength = pageEntries.sumBy { it.length.toInt() } + toInsert.length
             var currentSum = 0
-            var splitEntry: NioBTreeEntry? = null
+            var splitEntry: MMapBTreeEntry? = null
 
             var insertLeft = false
 
@@ -212,7 +221,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
                         splitEntry = e
                         if (isInnerPage) {
                             assert(e.childPageNumber != null)
-                            val firstEntry = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
+                            val firstEntry = MMapBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
                             // save here childPageNumber of splitEntry, so before first element in page,
                             // all elements of page on which the splitEntry points are positions
                             firstEntry.childPageNumber = splitEntry.childPageNumber
@@ -246,8 +255,8 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
 
 
 
-    fun insert(tx: TXIdentifier, key: ComparableNioPageEntry, value: NioPageEntry) {
-        val toInsert = NioBTreeEntry(key, value)
+    override fun insert(tx: TXIdentifier, key: ComparableMMapPageEntry, value: MMapPageEntry) {
+        val toInsert = MMapBTreeEntry(key, value)
 
         insertAndFixRoot(toInsert, false)
         if (doCheck) {
@@ -256,13 +265,13 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         }
     }
 
-    private fun insertAndFixRoot(toInsert: NioBTreeEntry, forceUnique: Boolean) {
+    private fun insertAndFixRoot(toInsert: MMapBTreeEntry, forceUnique: Boolean) {
         val splitElement = insert(root, toInsert, forceUnique)
         fixRoot(splitElement)
     }
 
     // make sure that root when set once stays the same page.
-    private fun fixRoot(splitElement: NioBTreeEntry?) {
+    private fun fixRoot(splitElement: MMapBTreeEntry?) {
         if (splitElement != null) {
             assert (splitElement.key != EmptyPageEntry())
             val tmp = root
@@ -273,7 +282,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
                     newLeftChild.add(e)
                 }
                 tmp.clear()
-                val firstRootElement = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
+                val firstRootElement = MMapBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
                 firstRootElement.childPageNumber = newLeftChild.number
                 tmp.add(firstRootElement)
                 tmp.add(splitElement)
@@ -306,7 +315,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         }
     }
 
-    private fun delete(page: NioPageFilePage, toDelete: ComparableNioPageEntry, value: NioPageEntry, toReInsert: MutableList<NioBTreeEntry>, level: Int): Pair<Boolean, NioBTreeEntry?> {
+    private fun delete(page: NioPageFilePage, toDelete: ComparableMMapPageEntry, value: MMapPageEntry, toReInsert: MutableList<MMapBTreeEntry>, level: Int): Pair<Boolean, MMapBTreeEntry?> {
         val pageEntries = getSortedEntries(page)
         val greater = pageEntries.find { it.key >= toDelete }
         val index = if (greater == null) pageEntries.size else pageEntries.indexOf(greater)
@@ -457,7 +466,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         return Pair(false, null)
     }
 
-    private fun handleEmptyChildPage(page: NioPageFilePage, child: NioPageFilePage, pageEntries: MutableList<NioBTreeEntry>, index: Int, toReInsert: MutableList<NioBTreeEntry>) {
+    private fun handleEmptyChildPage(page: NioPageFilePage, child: NioPageFilePage, pageEntries: MutableList<MMapBTreeEntry>, index: Int, toReInsert: MutableList<MMapBTreeEntry>) {
         val referingEntry = pageEntries[index]
         if (index == 0) {
             if (pageEntries.size == 1) {
@@ -482,7 +491,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         file.freePage(child)
     }
 
-    private fun tryMergeChildToLeftPage(pageEntries: MutableList<NioBTreeEntry>, index: Int, child: NioPageFilePage, page: NioPageFilePage): Boolean {
+    private fun tryMergeChildToLeftPage(pageEntries: MutableList<MMapBTreeEntry>, index: Int, child: NioPageFilePage, page: NioPageFilePage): Boolean {
         val rightEntry = pageEntries[index - 1]
         // child is small, try to add it to the left
         val prevChildPageNo = pageEntries[index - 2].childPageNumber ?: throw AssertionError("expected left page to be available for merging")
@@ -492,7 +501,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         return mergeRightToLeft(leftPage, child, rightEntry, page)
     }
 
-    private fun tryMergeRightToChild(pageEntries: MutableList<NioBTreeEntry>, index: Int, child: NioPageFilePage, page: NioPageFilePage): Boolean {
+    private fun tryMergeRightToChild(pageEntries: MutableList<MMapBTreeEntry>, index: Int, child: NioPageFilePage, page: NioPageFilePage): Boolean {
         val rightEntry = pageEntries[index]
         // leftmost page is small, try to add everything from the right page
         val rightPage = NioPageFilePage(file, rightEntry.childPageNumber!!)
@@ -500,7 +509,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         return mergeRightToLeft(child, rightPage, rightEntry, page)
     }
 
-    private fun mergeRightToLeft(leftPage: NioPageFilePage, rightPage: NioPageFilePage, rightEntry: NioBTreeEntry, page: NioPageFilePage): Boolean {
+    private fun mergeRightToLeft(leftPage: NioPageFilePage, rightPage: NioPageFilePage, rightEntry: MMapBTreeEntry, page: NioPageFilePage): Boolean {
         leftPage.compactIndexArea()
         rightPage.compactIndexArea()
 
@@ -594,7 +603,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
                         leftPage.add(it)
                     })
                     if (firstChildRight != null) {
-                        val first = NioBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
+                        val first = MMapBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
                         first.childPageNumber = splitEntry.childPageNumber
                         rightPage.remove(rightEmpty!!.indexEntry!!)
                         rightPage.add(first)
@@ -612,7 +621,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
     }
 
 
-    private fun findSmallestEntry(child: NioPageFilePage): NioBTreeEntry? {
+    private fun findSmallestEntry(child: NioPageFilePage): MMapBTreeEntry? {
         val entries = getSortedEntries(child)
         if (entries.size == 0)
             return null
@@ -637,8 +646,8 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         throw AssertionError("expecting at least one valid entry")
     }
 
-    fun remove(tx: TXIdentifier, key: ComparableNioPageEntry, value: NioPageEntry) {
-        val toReInsert = mutableListOf<NioBTreeEntry>()
+    override fun remove(tx: TXIdentifier, key: ComparableMMapPageEntry, value: MMapPageEntry) {
+        val toReInsert = mutableListOf<MMapBTreeEntry>()
         val splitElement = delete(root, key, value, toReInsert, 0).second
         fixRoot(splitElement)
         for (e in toReInsert) {
@@ -652,9 +661,9 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
 
     }
 
-    fun iterator(tx: TXIdentifier): Iterator<NioPageEntry> {
+    override fun iterator(tx: TXIdentifier): Iterator<MMapPageEntry> {
 
-        return object : Iterator<NioPageEntry> {
+        return object : Iterator<MMapPageEntry> {
             val path = Stack<Pair<NioPageFilePage, Int>>()
 
             init {
@@ -690,7 +699,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
                 }
             }
 
-            override fun next(): NioPageEntry {
+            override fun next(): MMapPageEntry {
                 if (hasNext()) {
                     val top = path.pop()
                     val entries = getSortedEntries(top.first)
@@ -712,7 +721,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         }
     }
 
-    fun find(page: NioPageFilePage, key: ComparableNioPageEntry) : NioBTreeEntry? {
+    fun find(page: NioPageFilePage, key: ComparableMMapPageEntry) : MMapBTreeEntry? {
         val entries = getSortedEntries(page)
         if (entries.size == 0)
             return null
@@ -733,7 +742,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
         }
     }
 
-    fun find(key: ComparableNioPageEntry) : List<NioPageEntry>? {
+    override fun find(key: ComparableMMapPageEntry) : List<MMapPageEntry>? {
         var res = find(root, key)
         if (res != null) {
             if (res.values is ListPageEntry) {
@@ -745,7 +754,7 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
             return null
     }
 
-    fun findSingle(key: ComparableNioPageEntry) : NioPageEntry? {
+    override fun findSingle(key: ComparableMMapPageEntry) : MMapPageEntry? {
         var tmp = find(key)
         if (tmp != null) {
             assert (tmp.size <= 1)
@@ -758,8 +767,8 @@ class NioBTree(val file: INioPageFile, rootPage: Int) {
             return null
     }
 
-    fun check(): String {
-        fun checkPage(page: NioPageFilePage, smallerEntryKey: ComparableNioPageEntry, biggerEntryKey: ComparableNioPageEntry?, done: MutableSet<Int>, result: StringBuffer) {
+    override fun check(): String {
+        fun checkPage(page: NioPageFilePage, smallerEntryKey: ComparableMMapPageEntry, biggerEntryKey: ComparableMMapPageEntry?, done: MutableSet<Int>, result: StringBuffer) {
             result.append(page.checkDataPage())
             // println("Doing Page: ${page.number}")
             val entries = getSortedEntries(page)

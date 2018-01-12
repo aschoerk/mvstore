@@ -32,7 +32,7 @@ interface INioPageFile : INioBufferWithOffset {
 }
 
 
-open class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : NioBufferWithOffset(buffer, 0), INioBufferWithOffset, INioPageFile {
+open class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : MMapBufferWithOffset(buffer, 0), INioBufferWithOffset, INioPageFile {
     fun checkFreeSpace() {
         (FREESPACE_OFFSET..(length-1) step PAGES_PER_FREESPACE_REGION * PAGESIZE).forEach({
             assert(getInt(it) == FREEMAP_MAGIC)

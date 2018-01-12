@@ -19,7 +19,7 @@ class NioBtreeTest {
 
     private var randomAccessFile: RandomAccessFile? = null
 
-    private var file: NioPageDbFile? = null
+    private var file: MMapDbFile? = null
 
     @Before fun setupNioPageFileTest() {
         File("/tmp/testfile.bin").delete()
@@ -27,7 +27,7 @@ class NioBtreeTest {
         f.seek(100000 * 8192 - 1)
         f.writeByte(0xFF)
         val b = MappedResizeableBuffer(f.channel,0L,f.length() )
-        this.file = NioPageDbFile(NioPageFile(b, f.length()))
+        this.file = MMapDbFile(NioPageFile(b, f.length()))
         this.randomAccessFile = f
     }
 
@@ -333,7 +333,7 @@ class NioBtreeTest {
         )
     }
 
-    fun checkAndOutput(tree: NioBTree) {
+    fun checkAndOutput(tree: IMMapBTree) {
         val res = tree.check()
         if (res.length > 0)
             println("\n$res")
