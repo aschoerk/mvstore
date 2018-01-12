@@ -367,10 +367,3 @@ class MVCCFile(val file: MMapPageFile) : IMMapPageFile {
 
 }
 
-
-
-fun main(args: Array<String>) {
-    val m = MMapper("/tmp/test.bin", 100000L)
-    m.putInt(1L, 100)
-    assert(m.getInt(1L) == 100)
-}
