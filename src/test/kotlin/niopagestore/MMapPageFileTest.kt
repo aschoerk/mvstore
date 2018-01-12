@@ -10,7 +10,7 @@ import org.junit.Test
 import java.io.File
 import java.io.RandomAccessFile
 
-class NioPageFileTest {
+class MMapPageFileTest {
     private var file: NioPageFile? = null
 
     private var randomAccessFile: RandomAccessFile? = null
