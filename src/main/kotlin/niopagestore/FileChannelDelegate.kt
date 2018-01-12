@@ -7,7 +7,7 @@ import java.nio.channels.FileLock
 import java.nio.channels.ReadableByteChannel
 import java.nio.channels.WritableByteChannel
 
-class MyFileChannel(val fch: FileChannel): FileChannel() {
+class FileChannelDelegate(val fch: FileChannel): FileChannel() {
     /**
      * Closes this channel.
      *
