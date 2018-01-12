@@ -1,10 +1,7 @@
-package niopageentries
+package mmapstore
 
-import niopageentries.NioPageEntryType.*
-import niopageobjects.IMMapPageFile
-import niopagestore.MMapPageFilePage
-import niopagestore.NioPageIndexEntry
-import niopageobjects.PAGESIZE
+
+import mmapstore.NioPageEntryType.*
 import java.io.InvalidClassException
 import java.util.*
 

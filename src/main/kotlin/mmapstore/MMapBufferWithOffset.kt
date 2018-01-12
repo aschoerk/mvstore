@@ -1,4 +1,4 @@
-package niopagestore
+package mmapstore
 
 import org.agrona.concurrent.MappedResizeableBuffer
 

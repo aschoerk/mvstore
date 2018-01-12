@@ -1,8 +1,5 @@
-package niopagestore
+package mmapstore
 
-import niopageentries.MMapPageEntry
-import niopageobjects.IMMapPageFile
-import niopageobjects.PAGESIZE
 import kotlin.experimental.and
 
 const val END_OF_HEADER = 24          // size of the header information

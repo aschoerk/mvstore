@@ -1,9 +1,9 @@
-package niopagestore
+package mmapstore
 
 import junit.framework.Assert.assertFalse
 import junit.framework.Assert.assertTrue
-import niopageentries.*
-import niopageobjects.*
+import mmapstore.*
+import mmapstore.*
 import org.agrona.concurrent.MappedResizeableBuffer
 import org.junit.Before
 import org.junit.Test

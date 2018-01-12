@@ -1,6 +1,6 @@
-package niopagestore
+package mmapstore
 
-import niopageobjects.*
+import mmapstore.*
 import org.junit.Test
 import kotlin.test.assertTrue
 import kotlin.test.fail

@@ -1,4 +1,4 @@
-package niopageobjects
+package mmapstore
 
 import java.nio.ByteBuffer
 import java.nio.MappedByteBuffer

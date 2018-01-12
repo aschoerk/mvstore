@@ -1,9 +1,9 @@
-package niopagestore
+package mmapstore
 
 import nioobjects.TXIdentifier
-import niopageentries.*
-import niopageobjects.IMMapPageFile
-import niopageobjects.PAGESIZE
+import mmapstore.*
+import mmapstore.IMMapPageFile
+import mmapstore.PAGESIZE
 import java.util.*
 
 

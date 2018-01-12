@@ -1,10 +1,6 @@
-package niopagestore
+package mmapstore
 
 import nioobjects.TXIdentifier
-import niopageentries.ByteArrayPageEntry
-import niopageentries.DoublePageEntry
-import niopageentries.EmptyPageEntry
-import niopageobjects.MMapPageFile
 import org.agrona.concurrent.MappedResizeableBuffer
 import org.junit.Before
 import org.junit.Test

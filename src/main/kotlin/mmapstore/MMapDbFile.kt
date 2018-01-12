@@ -1,9 +1,7 @@
-package niopagestore
+package mmapstore
 
 import nioobjects.TXIdentifier
-import niopageentries.*
-import niopageobjects.MVCCFile
-import niopageobjects.MMapPageFile
+
 
 const val PAGE_DB_MAGIC = -0x12568762
 const val PAGE_DB_MAGIC_OFFSET = 4L

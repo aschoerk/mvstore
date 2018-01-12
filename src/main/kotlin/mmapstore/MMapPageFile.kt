@@ -2,7 +2,7 @@
  * @author aschoerk
  */
 
-package niopageobjects
+package mmapstore
 
 import niopagestore.*
 import org.agrona.concurrent.MappedResizeableBuffer
