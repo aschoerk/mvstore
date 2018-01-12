@@ -1,8 +1,5 @@
 package mmapstore
 
-import nioobjects.TXIdentifier
-
-
 const val PAGE_DB_MAGIC = -0x12568762
 const val PAGE_DB_MAGIC_OFFSET = 4L
 
@@ -37,7 +34,7 @@ class MMapDbFile(val file: MMapPageFile) {
         val key = StringPageEntry(name)
         assert (directory.find(key) == null)
         val root = file.newPage()
-        directory.insert(TXIdentifier(), key, MMapBTreeDirEntry(root.number, mvcc))
+        directory.insert(key, MMapBTreeDirEntry(root.number, mvcc))
         if (mvcc)
             return MMapBTree(MVCCFile(file), root.number)
         else

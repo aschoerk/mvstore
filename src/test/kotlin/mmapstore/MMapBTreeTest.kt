@@ -1,6 +1,6 @@
 package mmapstore
 
-import nioobjects.TXIdentifier
+
 import org.agrona.concurrent.MappedResizeableBuffer
 import org.junit.Before
 import org.junit.Test
@@ -32,10 +32,10 @@ class MMapBtreeTest {
         val tree = file!!.createBTree("test")
         val value = EmptyPageEntry()
         for (i in 1..100) {
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
+            tree.insert(DoublePageEntry(i.toDouble()), value)
         }
         for (i in 1..100) {
-            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
+            tree.remove(DoublePageEntry(i.toDouble()), value)
         }
     }
 
@@ -43,14 +43,14 @@ class MMapBtreeTest {
     fun canStoreDuplicateKeysWithEqualValues() {
         val tree = file!!.createBTree("test")
         for (i in 1..100) {
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
+            tree.insert(DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
+            tree.insert(DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
         }
         for (i in 1..100) {
-            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
+            tree.remove(DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
         }
         for (i in 1..100) {
-            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
+            tree.remove(DoublePageEntry(i.toDouble()), DoublePageEntry(i.toDouble()))
         }
     }
 
@@ -60,31 +60,31 @@ class MMapBtreeTest {
 
         val valueNumber = 100000
         (1..valueNumber).shuffled().forEach( {
-            tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry((it+1).toDouble()))
-            tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry(it.toDouble()))
+            tree.insert(DoublePageEntry(it.toDouble()), DoublePageEntry((it+1).toDouble()))
+            tree.insert(DoublePageEntry(it.toDouble()), DoublePageEntry(it.toDouble()))
             if (it % 1000 == 0) {
                 println("Inserted $it pairs")
                 checkAndOutput(tree)
                 val valuesbetween = (1..it / 100 ).shuffled()
                 valuesbetween.forEach( {
-                    tree.insert(TXIdentifier(), DoublePageEntry(it+0.5), DoublePageEntry((it+1).toDouble()))
+                    tree.insert(DoublePageEntry(it+0.5), DoublePageEntry((it+1).toDouble()))
                 })
                 valuesbetween.forEach( {
-                    tree.remove(TXIdentifier(), DoublePageEntry(it+0.5), DoublePageEntry((it+1).toDouble()))
+                    tree.remove(DoublePageEntry(it+0.5), DoublePageEntry((it+1).toDouble()))
                 })
                 checkAndOutput(tree)
             }
 
         })
         (1..valueNumber).shuffled().forEach( {
-            tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry((it).toDouble()))
+            tree.remove(DoublePageEntry(it.toDouble()), DoublePageEntry((it).toDouble()))
             if (it % 1000 == 0) {
                 println("Removed $it second values")
                 checkAndOutput(tree)
             }
         })
         (1..valueNumber).shuffled().forEach( {
-            tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), DoublePageEntry((it+1).toDouble()))
+            tree.remove(DoublePageEntry(it.toDouble()), DoublePageEntry((it+1).toDouble()))
             if (it % 1000 == 0) {
                 println("Removed $it second values")
                 checkAndOutput(tree)
@@ -100,13 +100,13 @@ class MMapBtreeTest {
         // split will be necessary
         for (i in 1..3) {
             println("Inserting $i")
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("    $it, ") }
+            tree.insert(DoublePageEntry(i.toDouble()), value)
+            tree.iterator().forEach { println("    $it, ") }
         }
         for (i in 1..3) {
             println("Deleting $i")
-            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("      $it, ") }
+            tree.remove(DoublePageEntry(i.toDouble()), value)
+            tree.iterator().forEach { println("      $it, ") }
         }
     }
 
@@ -118,13 +118,13 @@ class MMapBtreeTest {
         // split will be necessary
         for (i in 1..3) {
             println("Inserting $i")
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("    $it, ") }
+            tree.insert(DoublePageEntry(i.toDouble()), value)
+            tree.iterator().forEach { println("    $it, ") }
         }
         for (i in 1..3) {
             println("Deleting ${4-i}")
-            tree.remove(TXIdentifier(), DoublePageEntry((4-i).toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("      $it, ") }
+            tree.remove(DoublePageEntry((4-i).toDouble()), value)
+            tree.iterator().forEach { println("      $it, ") }
         }
     }
 
@@ -136,13 +136,13 @@ class MMapBtreeTest {
         // split will be necessary
         (1..5).forEach( {
             println("Inserting $it")
-            tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("    $it, ") }
+            tree.insert(DoublePageEntry(it.toDouble()), value)
+            tree.iterator().forEach { println("    $it, ") }
         })
         for (i in 1..5) {
             println("Deleting $i")
-            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("    $it, ") }
+            tree.remove(DoublePageEntry(i.toDouble()), value)
+            tree.iterator().forEach { println("    $it, ") }
         }
     }
 
@@ -154,13 +154,13 @@ class MMapBtreeTest {
         // split will be necessary
         for (i in 1..5) {
             println("Inserting $i")
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("    $it, ") }
+            tree.insert(DoublePageEntry(i.toDouble()), value)
+            tree.iterator().forEach { println("    $it, ") }
         }
         (1..5).reversed().forEach({
             println("Deleting $it")
-            tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("    $it, ") }
+            tree.remove(DoublePageEntry(it.toDouble()), value)
+            tree.iterator().forEach { println("    $it, ") }
         })
     }
 
@@ -172,15 +172,15 @@ class MMapBtreeTest {
         // split will be necessary
         for (i in 1..20) {
             println("During Insert $i")
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
+            tree.insert(DoublePageEntry(i.toDouble()), value)
+            tree.iterator().forEach { println("     $it, ") }
         }
         println("After Insert")
-            tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
+            tree.iterator().forEach { println("     $it, ") }
         for (i in 1..20) {
             println("During Remove $i")
-            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
+            tree.remove(DoublePageEntry(i.toDouble()), value)
+            tree.iterator().forEach { println("     $it, ") }
         }
     }
 
@@ -192,15 +192,15 @@ class MMapBtreeTest {
         // split will be necessary
         for (i in 1..20) {
             println("During Insert $i")
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
+            tree.insert(DoublePageEntry(i.toDouble()), value)
+            tree.iterator().forEach { println("     $it, ") }
         }
         println("After Insert")
-        tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
+        tree.iterator().forEach { println("     $it, ") }
         for (i in 1..20) {
             println("During Remove ${21-i}")
-            tree.remove(TXIdentifier(), DoublePageEntry((21 - i).toDouble()), value)
-            tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
+            tree.remove(DoublePageEntry((21 - i).toDouble()), value)
+            tree.iterator().forEach { println("     $it, ") }
         }
     }
 
@@ -213,14 +213,14 @@ class MMapBtreeTest {
         val numberToInsert = 180
         for (i in 1..180) {
             println("During Insert $i")
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
+            tree.insert(DoublePageEntry(i.toDouble()), value)
         }
         println("After Insert")
-        tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
+        tree.iterator().forEach { println("     $it, ") }
         val numberList = (1..180).toList().shuffled(Random(11))
         for (i in numberList) {
             println("During Remove $i")
-            tree.remove(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
+            tree.remove(DoublePageEntry(i.toDouble()), value)
         }
     }
 
@@ -235,13 +235,13 @@ class MMapBtreeTest {
 
         for (i in numberList1) {
             println("During Insert $i")
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
+            tree.insert(DoublePageEntry(i.toDouble()), value)
         }
         println("After Insert")
-        tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
+        tree.iterator().forEach { println("     $it, ") }
         (1..numberToInsert).shuffled(Random(11)).forEach( {
             println("During Remove $it")
-            tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), value)
+            tree.remove(DoublePageEntry(it.toDouble()), value)
         })
     }
 
@@ -256,13 +256,13 @@ class MMapBtreeTest {
 
         for (i in numberList1) {
             println("During Insert $i")
-            tree.insert(TXIdentifier(), DoublePageEntry(i.toDouble()), value)
+            tree.insert(DoublePageEntry(i.toDouble()), value)
         }
         println("After Insert")
-        tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
+        tree.iterator().forEach { println("     $it, ") }
         (1..numberToInsert).shuffled(Random(11)).forEach( {
             println("During Remove $it")
-            tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), value)
+            tree.remove(DoublePageEntry(it.toDouble()), value)
         })
     }
 
@@ -275,13 +275,13 @@ class MMapBtreeTest {
 
         (1..numberToInsert).shuffled(Random(200)).forEach(
                 {
-                    tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
+                    tree.insert(DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
                     println(tree.check())
 
                 }
         )
         println("After Insert \n ${tree.check()}")
-        tree.iterator(TXIdentifier()).forEach { println("     $it, ") }
+        tree.iterator().forEach { println("     $it, ") }
         val loops = 30
         (1..loops).forEach({ loopcount ->
             var half = numberToInsert / 2
@@ -289,7 +289,7 @@ class MMapBtreeTest {
             (1..half).shuffled(Random(loopcount % 100L)).forEach(
                     {
                         print(" $it")
-                        tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
+                        tree.remove( DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
                         checkAndOutput(tree)
                     }
             )
@@ -297,7 +297,7 @@ class MMapBtreeTest {
             (1..half).toList().shuffled(Random(loopcount % 100L)).forEach(
                     {
                         print(" $it")
-                        tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
+                        tree.insert(DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
                         checkAndOutput(tree)
                     }
             )
@@ -305,7 +305,7 @@ class MMapBtreeTest {
             (half+1..numberToInsert).shuffled(Random(loopcount % 100L)).forEach(
                     {
                         print(" $it")
-                        tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
+                        tree.remove(DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
                         checkAndOutput(tree)
                     }
             )
@@ -313,7 +313,7 @@ class MMapBtreeTest {
             (half+1..numberToInsert).shuffled(Random(loopcount % 100L)).forEach(
                     {
                         print(" $it")
-                        tree.insert(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
+                        tree.insert(DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
                         checkAndOutput(tree)
                     }
             )
@@ -323,7 +323,7 @@ class MMapBtreeTest {
         (1..numberToInsert).shuffled(Random(200)).forEach(
                 {
                     print(" $it")
-                    tree.remove(TXIdentifier(), DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
+                    tree.remove(DoublePageEntry(it.toDouble()), byteArrayPageEntry(it))
                     checkAndOutput(tree)
                 }
         )

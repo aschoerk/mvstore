@@ -1,9 +1,5 @@
 package mmapstore
 
-import nioobjects.TXIdentifier
-import mmapstore.*
-import mmapstore.IMMapPageFile
-import mmapstore.PAGESIZE
 import java.util.*
 
 
@@ -77,9 +73,9 @@ fun unmarshallEntry(page: MMapPageFilePage, indexEntry: MMapPageFilePage.IndexEn
 
 interface IMMapBTree {
     var doCheck: Boolean
-    fun insert(tx: TXIdentifier, key: ComparableMMapPageEntry, value: MMapPageEntry)
-    fun remove(tx: TXIdentifier, key: ComparableMMapPageEntry, value: MMapPageEntry)
-    fun iterator(tx: TXIdentifier): Iterator<MMapPageEntry>
+    fun insert( key: ComparableMMapPageEntry, value: MMapPageEntry)
+    fun remove(key: ComparableMMapPageEntry, value: MMapPageEntry)
+    fun iterator(): Iterator<MMapPageEntry>
     fun find(key: ComparableMMapPageEntry) : List<MMapPageEntry>?
     fun findSingle(key: ComparableMMapPageEntry) : MMapPageEntry?
     fun check(): String
@@ -255,7 +251,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
 
 
 
-    override fun insert(tx: TXIdentifier, key: ComparableMMapPageEntry, value: MMapPageEntry) {
+    override fun insert(key: ComparableMMapPageEntry, value: MMapPageEntry) {
         val toInsert = MMapBTreeEntry(key, value)
 
         insertAndFixRoot(toInsert, false)
@@ -646,7 +642,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
         throw AssertionError("expecting at least one valid entry")
     }
 
-    override fun remove(tx: TXIdentifier, key: ComparableMMapPageEntry, value: MMapPageEntry) {
+    override fun remove(key: ComparableMMapPageEntry, value: MMapPageEntry) {
         val toReInsert = mutableListOf<MMapBTreeEntry>()
         val splitElement = delete(root, key, value, toReInsert, 0).second
         fixRoot(splitElement)
@@ -661,7 +657,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
 
     }
 
-    override fun iterator(tx: TXIdentifier): Iterator<MMapPageEntry> {
+    override fun iterator(): Iterator<MMapPageEntry> {
 
         return object : Iterator<MMapPageEntry> {
             val path = Stack<Pair<MMapPageFilePage, Int>>()
