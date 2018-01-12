@@ -11,7 +11,7 @@ import java.io.File
 import java.io.RandomAccessFile
 
 class MMapPageFileTest {
-    private var file: NioPageFile? = null
+    private var file: MMapPageFile? = null
 
     private var randomAccessFile: RandomAccessFile? = null
 
@@ -21,7 +21,7 @@ class MMapPageFileTest {
         f.seek(10000 * 8192 - 1)
         f.writeByte(0xFF)
         val b = MappedResizeableBuffer(f.channel,0L,f.length() )
-        this.file = NioPageFile(b, f.length())
+        this.file = MMapPageFile(b, f.length())
         this.randomAccessFile = f
     }
 
@@ -30,8 +30,8 @@ class MMapPageFileTest {
     @Test
     fun testInitClear()  {
         
-        val pages: MutableList<NioPageFilePage> = mutableListOf()
-        var lastPage: NioPageFilePage? = null
+        val pages: MutableList<MMapPageFilePage> = mutableListOf()
+        var lastPage: MMapPageFilePage? = null
         for (i in 0..(randomAccessFile!!.length() / PAGESIZE - 1) - 3) {
             val page = file!!.newPage()
             if (lastPage != null) {
@@ -42,7 +42,7 @@ class MMapPageFileTest {
             pages.add(page)
             lastPage = page
         }
-        val freedPages: MutableList<NioPageFilePage> = mutableListOf()
+        val freedPages: MutableList<MMapPageFilePage> = mutableListOf()
 
 
         for (p in pages) {
@@ -326,7 +326,7 @@ class MMapPageFileTest {
         return testEntries
     }
 
-    private fun writeReadInPageCheck(page: NioPageFilePage, entry: MMapPageEntry) {
+    private fun writeReadInPageCheck(page: MMapPageFilePage, entry: MMapPageEntry) {
         val idx1 = page.add(entry)
         val read = unmarshalFrom(file!!, page.offset(idx1))
         page.remove(idx1)

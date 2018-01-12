@@ -4,7 +4,7 @@ import nioobjects.TXIdentifier
 import niopageentries.ByteArrayPageEntry
 import niopageentries.DoublePageEntry
 import niopageentries.EmptyPageEntry
-import niopageobjects.NioPageFile
+import niopageobjects.MMapPageFile
 import org.agrona.concurrent.MappedResizeableBuffer
 import org.junit.Before
 import org.junit.Test
@@ -15,7 +15,7 @@ import java.util.*
 /**
  * @author aschoerk
  */
-class NioBtreeTest {
+class MMapBtreeTest {
 
     private var randomAccessFile: RandomAccessFile? = null
 
@@ -27,7 +27,7 @@ class NioBtreeTest {
         f.seek(100000 * 8192 - 1)
         f.writeByte(0xFF)
         val b = MappedResizeableBuffer(f.channel,0L,f.length() )
-        this.file = MMapDbFile(NioPageFile(b, f.length()))
+        this.file = MMapDbFile(MMapPageFile(b, f.length()))
         this.randomAccessFile = f
     }
 

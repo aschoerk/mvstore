@@ -9,7 +9,7 @@ import java.nio.IntBuffer
 import java.util.*
 
 
-class NioObjectBufferTest {
+class MMapObjectBufferTest {
     val BUFFER_LENGTH = 100
     val RANDOM_START = BUFFER_LENGTH / 2
     val intBuffer: IntBuffer = IntBuffer.allocate(BUFFER_LENGTH)

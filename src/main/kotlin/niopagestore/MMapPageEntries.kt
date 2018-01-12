@@ -1,8 +1,8 @@
 package niopageentries
 
 import niopageentries.NioPageEntryType.*
-import niopageobjects.INioPageFile
-import niopagestore.NioPageFilePage
+import niopageobjects.IMMapPageFile
+import niopagestore.MMapPageFilePage
 import niopagestore.NioPageIndexEntry
 import niopageobjects.PAGESIZE
 import java.io.InvalidClassException
@@ -16,7 +16,7 @@ enum class NioPageEntryType {
 interface MMapPageEntry {
     val length: Short
     val type: NioPageEntryType
-    fun marshalTo(file: INioPageFile, offset: Long)
+    fun marshalTo(file: IMMapPageFile, offset: Long)
 }
 
 interface ComparableMMapPageEntry : MMapPageEntry, Comparable<ComparableMMapPageEntry> {
@@ -84,7 +84,7 @@ open class ListPageEntry(c: Collection<MMapPageEntry>) : ComparableMMapPageEntry
 
     operator fun get(i: Int) = a[i]
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         file.setByte(offset, PAGEENTRY_LIST.ordinal.toByte())
         file.setShort(offset+1, toShort(length-3))
         var currentOffset = offset + 3
@@ -123,7 +123,7 @@ class BooleanPageEntry(val v: Boolean) : ComparableMMapPageEntry, MMapPageNumber
     override val type: NioPageEntryType
         get() = BOOLEAN
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         file.setByte(offset, BOOLEAN.ordinal.toByte())
         file.setByte(offset+1, if (v) 1 else 0)
     }
@@ -135,7 +135,7 @@ class EmptyPageEntry : ComparableMMapPageEntry {
     override val type: NioPageEntryType
         get() = EMPTY
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         file.setByte(offset, EMPTY.ordinal.toByte())
     }
 
@@ -167,7 +167,7 @@ class BytePageEntry(val v: Byte) : ComparableMMapPageEntry, MMapPageNumberEntryB
     override val type: NioPageEntryType
         get() = BYTE
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         file.setByte(offset, BYTE.ordinal.toByte())
         file.setByte(offset+1, v)
     }
@@ -180,7 +180,7 @@ class CharPageEntry(val v: Char) : ComparableMMapPageEntry, MMapPageNumberEntryB
     override val type: NioPageEntryType
         get() = CHAR
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         file.setByte(offset, CHAR.ordinal.toByte())
         file.setShort(offset+1, v.toShort())
     }
@@ -194,7 +194,7 @@ class StringPageEntry(val s: String) : ComparableMMapPageEntry {
     override val type: NioPageEntryType
         get() = STRING
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         if (b.size > Short.MAX_VALUE)
             throw StringIndexOutOfBoundsException("Only Short sizes supported for strings in Pageentries")
         file.setByte(offset, STRING.ordinal.toByte())
@@ -238,7 +238,7 @@ class ShortPageEntry(val v: Short) : ComparableMMapPageEntry, MMapPageNumberEntr
     override val type: NioPageEntryType
         get() = SHORT
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         file.setByte(offset, SHORT.ordinal.toByte())
         file.setShort(offset+1, v)
     }
@@ -250,7 +250,7 @@ class IntPageEntry(val v: Int) : ComparableMMapPageEntry, MMapPageNumberEntryBas
     override val type: NioPageEntryType
         get() = INT
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         file.setByte(offset, INT.ordinal.toByte())
         file.setInt(offset+1, v)
     }
@@ -263,7 +263,7 @@ class LongPageEntry(val v: Long) : ComparableMMapPageEntry, MMapPageNumberEntryB
     override val type: NioPageEntryType
         get() = LONG
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         file.setByte(offset, LONG.ordinal.toByte())
         file.setLong(offset+1, v)
     }
@@ -276,7 +276,7 @@ class FloatPageEntry(val f: Float) : ComparableMMapPageEntry, MMapPageNumberEntr
     override val type: NioPageEntryType
         get() = FLOAT
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         file.setByte(offset, FLOAT.ordinal.toByte())
         file.setFloat(offset+1, f)
     }
@@ -288,7 +288,7 @@ class DoublePageEntry(val d: Double) : ComparableMMapPageEntry, MMapPageNumberEn
     override val type: NioPageEntryType
         get() = DOUBLE
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         file.setByte(offset, DOUBLE.ordinal.toByte())
         file.setDouble(offset+1, d)
     }
@@ -306,7 +306,7 @@ class ByteArrayPageEntry(val ba: ByteArray) : ComparableMMapPageEntry {
     override val type: NioPageEntryType
         get() = BYTE_ARRAY
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         file.setByte(offset, BYTE_ARRAY.ordinal.toByte())
         file.setShort(offset+1, toShort(ba.size))
         file.setByteArray(offset+3, ba)
@@ -347,9 +347,9 @@ class ByteArrayPageEntry(val ba: ByteArray) : ComparableMMapPageEntry {
 }
 
 
-fun unmarshalFrom(file: INioPageFile, offset: NioPageIndexEntry): MMapPageEntry {
+fun unmarshalFrom(file: IMMapPageFile, offset: NioPageIndexEntry): MMapPageEntry {
     val pn = offset.entryOffset / PAGESIZE
-    val page = NioPageFilePage(file, pn.toInt())
+    val page = MMapPageFilePage(file, pn.toInt())
     return unmarshalFrom(file, page.offset(offset))
 }
 
@@ -376,7 +376,7 @@ fun<T> entryFrom(v: T) : MMapPageEntry {
 }
 
 
-fun unmarshalFrom(file: INioPageFile, offset: Long): ComparableMMapPageEntry {
+fun unmarshalFrom(file: IMMapPageFile, offset: Long): ComparableMMapPageEntry {
     val type = values()[file.getByte(offset).toInt()]
     when (type) {
         BYTE -> return BytePageEntry(file.getByte(offset+1))

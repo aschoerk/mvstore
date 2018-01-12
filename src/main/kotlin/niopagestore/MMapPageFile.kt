@@ -24,15 +24,15 @@ const val DATAPAGES_PER_FREESPACE_REGION = ((PAGESIZE - START_OF_FREESPACE_MAP) 
 const val PAGES_PER_FREESPACE_REGION = DATAPAGES_PER_FREESPACE_REGION + 1
 
 
-interface INioPageFile : INioBufferWithOffset {
-    fun newPage(): NioPageFilePage
-    fun freePage(page: NioPageFilePage)
+interface IMMapPageFile : IMMapBufferWithOffset {
+    fun newPage(): MMapPageFilePage
+    fun freePage(page: MMapPageFilePage)
     fun isUsed(pageNum: Int): Boolean
     fun isFree(pageNum: Int): Boolean
 }
 
 
-open class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : MMapBufferWithOffset(buffer, 0), INioBufferWithOffset, INioPageFile {
+open class MMapPageFile(val buffer: MappedResizeableBuffer, val length: Long) : MMapBufferWithOffset(buffer, 0), IMMapBufferWithOffset, IMMapPageFile {
     fun checkFreeSpace() {
         (FREESPACE_OFFSET..(length-1) step PAGES_PER_FREESPACE_REGION * PAGESIZE).forEach({
             assert(getInt(it) == FREEMAP_MAGIC)
@@ -50,19 +50,19 @@ open class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : M
     }
 
 
-    override fun newPage(): NioPageFilePage {
+    override fun newPage(): MMapPageFilePage {
         val pageNum = allocPage()
         if (pageNum == null)
             throw AssertionError("TODO: extend file")
         setInt(pageNum * PAGESIZE, 0)    // initialize page to show also by content, that it is new
-        return NioPageFilePage(this, pageNum)
+        return MMapPageFilePage(this, pageNum)
     }
 
-    override fun freePage(page: NioPageFilePage) = setFree(page.number)
+    override fun freePage(page: MMapPageFilePage) = setFree(page.number)
 
-    fun usedPagesIterator(): Iterator<NioPageFilePage> {
+    fun usedPagesIterator(): Iterator<MMapPageFilePage> {
 
-        return object : Iterator<NioPageFilePage> {
+        return object : Iterator<MMapPageFilePage> {
             var lastPageNumber = 0
 
             /**
@@ -73,7 +73,7 @@ open class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : M
                     lastPageNumber = 1
                     advance()
                 }
-                return lastPageNumber * PAGESIZE < this@NioPageFile.length && this@NioPageFile.isUsed(lastPageNumber)
+                return lastPageNumber * PAGESIZE < this@MMapPageFile.length && this@MMapPageFile.isUsed(lastPageNumber)
             }
 
             private fun advance() {
@@ -82,18 +82,18 @@ open class NioPageFile(val buffer: MappedResizeableBuffer, val length: Long) : M
                     lastPageNumber++
                     if ((lastPageNumber - 1) % PAGES_PER_FREESPACE_REGION == 0)
                         lastPageNumber++
-                    if (lastPageNumber * PAGESIZE > this@NioPageFile.length)
+                    if (lastPageNumber * PAGESIZE > this@MMapPageFile.length)
                         return
-                    isUsed = this@NioPageFile.isUsed(lastPageNumber)
+                    isUsed = this@MMapPageFile.isUsed(lastPageNumber)
                 } while (!isUsed)
             }
 
             /**
              * Returns the next element in the iteration.
              */
-            override fun next(): NioPageFilePage {
+            override fun next(): MMapPageFilePage {
                 if (hasNext()) {
-                    val result = NioPageFilePage(this@NioPageFile, lastPageNumber)
+                    val result = MMapPageFilePage(this@MMapPageFile, lastPageNumber)
                     advance()
                     return result
                 }
@@ -236,7 +236,7 @@ object MVCC {
 
 
 
-class MVCCFile(val file: NioPageFile) : INioPageFile {
+class MVCCFile(val file: MMapPageFile) : IMMapPageFile {
 
     val b = file
 
@@ -339,11 +339,11 @@ class MVCCFile(val file: NioPageFile) : INioPageFile {
         b.move(convertOffset(from), convertOffset(to), size)
     }
 
-    override fun newPage(): NioPageFilePage {
+    override fun newPage(): MMapPageFilePage {
         return file.newPage()
     }
 
-    override fun freePage(page: NioPageFilePage) {
+    override fun freePage(page: MMapPageFilePage) {
         val transactionInfo = MVCC.current()
         if (transactionInfo != null) {
             transactionInfo.freedPages.add(page.number)

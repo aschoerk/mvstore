@@ -2,12 +2,12 @@ package niopagestore
 
 import nioobjects.TXIdentifier
 import niopageentries.*
-import niopageobjects.INioPageFile
+import niopageobjects.IMMapPageFile
 import niopageobjects.PAGESIZE
 import java.util.*
 
 
-class MMapBTreeEntry(val key: ComparableMMapPageEntry, val values: ListPageEntry, val indexEntry: NioPageFilePage.IndexEntry?) : MMapPageEntry {
+class MMapBTreeEntry(val key: ComparableMMapPageEntry, val values: ListPageEntry, val indexEntry: MMapPageFilePage.IndexEntry?) : MMapPageEntry {
     constructor(key: ComparableMMapPageEntry, value: MMapPageEntry) : this(key, ListPageEntry(mutableListOf(value)), null)
 
     var childPageNumber: Int? = null  // if not null points to a page containing bigger keys then this
@@ -19,7 +19,7 @@ class MMapBTreeEntry(val key: ComparableMMapPageEntry, val values: ListPageEntry
     override val type: NioPageEntryType
         get() = NioPageEntryType.ELSE
 
-    override fun marshalTo(file: INioPageFile, offset: Long) {
+    override fun marshalTo(file: IMMapPageFile, offset: Long) {
         key.marshalTo(file, offset)
         values.marshalTo(file, offset + key.length)
         if (childPageNumber != null) {
@@ -59,7 +59,7 @@ class MMapBTreeEntry(val key: ComparableMMapPageEntry, val values: ListPageEntry
 
 }
 
-fun unmarshallEntry(page: NioPageFilePage, indexEntry: NioPageFilePage.IndexEntry): MMapBTreeEntry {
+fun unmarshallEntry(page: MMapPageFilePage, indexEntry: MMapPageFilePage.IndexEntry): MMapBTreeEntry {
     assert(!indexEntry.deleted)
     val offset = indexEntry.offsetInFile(page)
     val key = unmarshalFrom(page.file, offset)
@@ -85,8 +85,8 @@ interface IMMapBTree {
     fun check(): String
 }
 
-class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
-    var root = NioPageFilePage(file, rootPage)
+class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
+    var root = MMapPageFilePage(file, rootPage)
     override var doCheck: Boolean = false
         get() = field
         set(doCheck) {
@@ -108,7 +108,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
         }
     }
 
-    private fun insert(page: NioPageFilePage, toInsert: MMapBTreeEntry, forceUnique: Boolean): MMapBTreeEntry? {
+    private fun insert(page: MMapPageFilePage, toInsert: MMapBTreeEntry, forceUnique: Boolean): MMapBTreeEntry? {
         val len = toInsert.length
         val pageEntries = getSortedEntries(page)
 
@@ -145,7 +145,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
                     if (childPageNumber == null)
                         throw AssertionError("expected childpagenumber to be != null in inner node")
                     else {
-                        val nextLayerPage = NioPageFilePage(file, childPageNumber)
+                        val nextLayerPage = MMapPageFilePage(file, childPageNumber)
                         val result = insert(nextLayerPage, toInsert, forceUnique)
                         if (result != null) {
                             if (result.key == EmptyPageEntry()) {
@@ -168,7 +168,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
         return null
     }
 
-    private fun getSortedEntries(page: NioPageFilePage): MutableList<MMapBTreeEntry> {
+    private fun getSortedEntries(page: MMapPageFilePage): MutableList<MMapBTreeEntry> {
         val pageEntries = mutableListOf<MMapBTreeEntry>()
         page.indexEntries().forEach {
             if (!it.deleted)
@@ -179,7 +179,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
         return pageEntries
     }
 
-    private fun ifEmptyInnerPageReturnFirstElement(page: NioPageFilePage): MMapBTreeEntry? {
+    private fun ifEmptyInnerPageReturnFirstElement(page: MMapPageFilePage): MMapBTreeEntry? {
         if (page.indexEntries().asSequence().count({ !it.deleted }) == 1) {
             val result = unmarshallEntry(page,
                     page.indexEntries()
@@ -193,7 +193,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
         return null;
     }
 
-    private fun insertAndSplitIfNecessary(page: NioPageFilePage,
+    private fun insertAndSplitIfNecessary(page: MMapPageFilePage,
                                           toInsert: MMapBTreeEntry,
                                           toInsertIndex: Int,
                                           pageEntries: MutableList<MMapBTreeEntry>,
@@ -297,7 +297,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
                 if (inner != null) {
                     val childPageNumber = inner.childPageNumber
                     if (childPageNumber != null) {
-                        val soloChild = NioPageFilePage(file, childPageNumber)
+                        val soloChild = MMapPageFilePage(file, childPageNumber)
                         val soloChildEntries = getSortedEntries(soloChild)
                         assert(soloChildEntries.size > 0)
                         if (soloChildEntries[0].childPageNumber != null) {
@@ -315,7 +315,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
         }
     }
 
-    private fun delete(page: NioPageFilePage, toDelete: ComparableMMapPageEntry, value: MMapPageEntry, toReInsert: MutableList<MMapBTreeEntry>, level: Int): Pair<Boolean, MMapBTreeEntry?> {
+    private fun delete(page: MMapPageFilePage, toDelete: ComparableMMapPageEntry, value: MMapPageEntry, toReInsert: MutableList<MMapBTreeEntry>, level: Int): Pair<Boolean, MMapBTreeEntry?> {
         val pageEntries = getSortedEntries(page)
         val greater = pageEntries.find { it.key >= toDelete }
         val index = if (greater == null) pageEntries.size else pageEntries.indexOf(greater)
@@ -323,7 +323,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
             assert(index > 0)
             val referingEntry = pageEntries[index - 1]
             val nextChildPageNo = referingEntry.childPageNumber ?: throw IndexOutOfBoundsException("entry to be deleted not found in tree")
-            val child = NioPageFilePage(file, nextChildPageNo)
+            val child = MMapPageFilePage(file, nextChildPageNo)
             val result = delete(child, toDelete, value, toReInsert, level + 1)
             val newEntry = result.second
             if (newEntry != null) {
@@ -362,7 +362,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
                     if (nextChildPageNo == null) {
                         page.remove(greater.indexEntry)
                     } else {
-                        val child = NioPageFilePage(file, nextChildPageNo)
+                        val child = MMapPageFilePage(file, nextChildPageNo)
 
                         var entryForReplacement = findSmallestEntry(child)
                         if (entryForReplacement == null) {
@@ -408,7 +408,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
                                 }
                                 assert(index > 0)
                                 val prevChildPageNo = pageEntries[index - 1].childPageNumber
-                                val leftPage = (if (prevChildPageNo == null) null else NioPageFilePage(file, prevChildPageNo)) ?: throw AssertionError("expected left page to be available for merging")
+                                val leftPage = (if (prevChildPageNo == null) null else MMapPageFilePage(file, prevChildPageNo)) ?: throw AssertionError("expected left page to be available for merging")
 
                                 // TODO: do exact calculation of: page fits in predecessor (use freeindexentries)
                                 // leftPage.compactIndexArea()
@@ -466,7 +466,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
         return Pair(false, null)
     }
 
-    private fun handleEmptyChildPage(page: NioPageFilePage, child: NioPageFilePage, pageEntries: MutableList<MMapBTreeEntry>, index: Int, toReInsert: MutableList<MMapBTreeEntry>) {
+    private fun handleEmptyChildPage(page: MMapPageFilePage, child: MMapPageFilePage, pageEntries: MutableList<MMapBTreeEntry>, index: Int, toReInsert: MutableList<MMapBTreeEntry>) {
         val referingEntry = pageEntries[index]
         if (index == 0) {
             if (pageEntries.size == 1) {
@@ -491,25 +491,25 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
         file.freePage(child)
     }
 
-    private fun tryMergeChildToLeftPage(pageEntries: MutableList<MMapBTreeEntry>, index: Int, child: NioPageFilePage, page: NioPageFilePage): Boolean {
+    private fun tryMergeChildToLeftPage(pageEntries: MutableList<MMapBTreeEntry>, index: Int, child: MMapPageFilePage, page: MMapPageFilePage): Boolean {
         val rightEntry = pageEntries[index - 1]
         // child is small, try to add it to the left
         val prevChildPageNo = pageEntries[index - 2].childPageNumber ?: throw AssertionError("expected left page to be available for merging")
-        val leftPage = NioPageFilePage(file, prevChildPageNo)
+        val leftPage = MMapPageFilePage(file, prevChildPageNo)
 
         // TODO: do exact calculation of: page fits in predecessor (use freeindexentries)
         return mergeRightToLeft(leftPage, child, rightEntry, page)
     }
 
-    private fun tryMergeRightToChild(pageEntries: MutableList<MMapBTreeEntry>, index: Int, child: NioPageFilePage, page: NioPageFilePage): Boolean {
+    private fun tryMergeRightToChild(pageEntries: MutableList<MMapBTreeEntry>, index: Int, child: MMapPageFilePage, page: MMapPageFilePage): Boolean {
         val rightEntry = pageEntries[index]
         // leftmost page is small, try to add everything from the right page
-        val rightPage = NioPageFilePage(file, rightEntry.childPageNumber!!)
+        val rightPage = MMapPageFilePage(file, rightEntry.childPageNumber!!)
         // TODO: do exact calculation of: page fits in predecessor (use freeindexentries)
         return mergeRightToLeft(child, rightPage, rightEntry, page)
     }
 
-    private fun mergeRightToLeft(leftPage: NioPageFilePage, rightPage: NioPageFilePage, rightEntry: MMapBTreeEntry, page: NioPageFilePage): Boolean {
+    private fun mergeRightToLeft(leftPage: MMapPageFilePage, rightPage: MMapPageFilePage, rightEntry: MMapBTreeEntry, page: MMapPageFilePage): Boolean {
         leftPage.compactIndexArea()
         rightPage.compactIndexArea()
 
@@ -621,7 +621,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
     }
 
 
-    private fun findSmallestEntry(child: NioPageFilePage): MMapBTreeEntry? {
+    private fun findSmallestEntry(child: MMapPageFilePage): MMapBTreeEntry? {
         val entries = getSortedEntries(child)
         if (entries.size == 0)
             return null
@@ -629,14 +629,14 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
         if (childPageNumber == null)
             return entries[0]
         else {
-            val res = findSmallestEntry(NioPageFilePage(file, childPageNumber))
+            val res = findSmallestEntry(MMapPageFilePage(file, childPageNumber))
             if (res == null && entries.size > 1)
                 return entries[1]
             else return res
         }
     }
 
-    private fun getNextValidIndexEntry(childIndexEntries: Iterator<NioPageFilePage.IndexEntry>): NioPageFilePage.IndexEntry {
+    private fun getNextValidIndexEntry(childIndexEntries: Iterator<MMapPageFilePage.IndexEntry>): MMapPageFilePage.IndexEntry {
         while (childIndexEntries.hasNext()) {
             val e = childIndexEntries.next()
             if (!e.deleted)
@@ -664,10 +664,10 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
     override fun iterator(tx: TXIdentifier): Iterator<MMapPageEntry> {
 
         return object : Iterator<MMapPageEntry> {
-            val path = Stack<Pair<NioPageFilePage, Int>>()
+            val path = Stack<Pair<MMapPageFilePage, Int>>()
 
             init {
-                val p = Pair(NioPageFilePage(file, root!!.number), 0)
+                val p = Pair(MMapPageFilePage(file, root!!.number), 0)
                 path.push(p)
             }
 
@@ -680,7 +680,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
 
                         val childPageNumber = act.childPageNumber
                         if (childPageNumber != null && top.second == 0) {
-                            val child = NioPageFilePage(file, childPageNumber)
+                            val child = MMapPageFilePage(file, childPageNumber)
                             path.push(top)  // restore parent
                             path.push(Pair(child, 0))
                         } else {
@@ -706,7 +706,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
                     val result = entries[top.second]
                     val childPageNumber = result.childPageNumber
                     if (childPageNumber != null) {
-                        val child = NioPageFilePage(file, childPageNumber)
+                        val child = MMapPageFilePage(file, childPageNumber)
                         path.push(top)
                         path.push(Pair(child, 0))
                     } else {
@@ -721,7 +721,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
         }
     }
 
-    fun find(page: NioPageFilePage, key: ComparableMMapPageEntry) : MMapBTreeEntry? {
+    fun find(page: MMapPageFilePage, key: ComparableMMapPageEntry) : MMapBTreeEntry? {
         val entries = getSortedEntries(page)
         if (entries.size == 0)
             return null
@@ -735,7 +735,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
                 assert(res < -1)
                 val childPageNumber = entries[-res - 2].childPageNumber
                 if (childPageNumber != null)
-                    return find(NioPageFilePage(file, childPageNumber), key)
+                    return find(MMapPageFilePage(file, childPageNumber), key)
                 else
                     return null
             }
@@ -768,7 +768,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
     }
 
     override fun check(): String {
-        fun checkPage(page: NioPageFilePage, smallerEntryKey: ComparableMMapPageEntry, biggerEntryKey: ComparableMMapPageEntry?, done: MutableSet<Int>, result: StringBuffer) {
+        fun checkPage(page: MMapPageFilePage, smallerEntryKey: ComparableMMapPageEntry, biggerEntryKey: ComparableMMapPageEntry?, done: MutableSet<Int>, result: StringBuffer) {
             result.append(page.checkDataPage())
             // println("Doing pg.Page: ${page.number}")
             val entries = getSortedEntries(page)
@@ -783,7 +783,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
                     if (entries[0].values.length != 4.toShort()) {
                         result.append("page(${page.number}):Expected length of 4 in values in first entry of page ${page.number}\n")
                     }
-                    if (NioPageFilePage(file, firstChildPageNumber!!).empty()) {
+                    if (MMapPageFilePage(file, firstChildPageNumber!!).empty()) {
                        //  result.append("page(${page.number}):First innerpage entry has empty leaf child\n")
                     }
 
@@ -817,7 +817,7 @@ class MMapBTree(val file: INioPageFile, rootPage: Int) : IMMapBTree {
                             if (file.isUsed(childPageNumber)) {
                                 val nextSmaller = if (i == 0) smallerEntryKey else entries[i].key
                                 val nextBigger = if (i + 1 < entries.size) entries[i + 1].key else biggerEntryKey
-                                checkPage(NioPageFilePage(file, childPageNumber), nextSmaller, nextBigger, done, result)
+                                checkPage(MMapPageFilePage(file, childPageNumber), nextSmaller, nextBigger, done, result)
                             } else
                                 result.append("page(${page.number}): refered childpage: $childPageNumber is marked as free\n")
                         }

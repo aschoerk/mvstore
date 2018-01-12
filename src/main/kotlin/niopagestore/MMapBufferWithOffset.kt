@@ -2,7 +2,7 @@ package niopagestore
 
 import org.agrona.concurrent.MappedResizeableBuffer
 
-interface INioBufferWithOffset {
+interface IMMapBufferWithOffset {
     fun getByte(idx: Long): Byte
     fun setByte(idx: Long, i: Byte)
     fun getChar(idx: Long): Char
@@ -24,7 +24,7 @@ interface INioBufferWithOffset {
     fun move(from: Long, to: Long, size: Int)
 }
 
-open class MMapBufferWithOffset(val b: MappedResizeableBuffer, val offset: Long) : INioBufferWithOffset {
+open class MMapBufferWithOffset(val b: MappedResizeableBuffer, val offset: Long) : IMMapBufferWithOffset {
     constructor(b: MMapBufferWithOffset)
             : this(b.b, b.offset)
 

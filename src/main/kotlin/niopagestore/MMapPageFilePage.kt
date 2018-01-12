@@ -1,7 +1,7 @@
 package niopagestore
 
 import niopageentries.MMapPageEntry
-import niopageobjects.INioPageFile
+import niopageobjects.IMMapPageFile
 import niopageobjects.PAGESIZE
 import kotlin.experimental.and
 
@@ -16,13 +16,13 @@ const val CHANGED_BY_TRA_INDEX = 16   // stores information about who changed th
 const val INDEX_ENTRY_SIZE = 4
 
 
-class NioPageFilePage(val file: INioPageFile, val offset: Long) {
+class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
     init {
         assert(offset > PAGESIZE,{"invalid offset: $offset first page in file reserved"})
         val pageNumber = (offset / PAGESIZE).toInt()
         assert(file.isUsed(pageNumber), {"trying to create already freed page"})
     }
-    constructor(file: INioPageFile, number: Int) : this(file, number.toLong() * PAGESIZE)
+    constructor(file: IMMapPageFile, number: Int) : this(file, number.toLong() * PAGESIZE)
     val number
         get() = (offset / PAGESIZE).toInt()
 
@@ -57,22 +57,22 @@ class NioPageFilePage(val file: INioPageFile, val offset: Long) {
                 elementIndexValue and 0x8000 != 0,
                 elementIndexValue and 0x10000 != 0)
 
-        constructor(page: NioPageFilePage, offset: Long)
+        constructor(page: MMapPageFilePage, offset: Long)
                 : this(((offset - END_OF_HEADER - page.offset) / INDEX_ENTRY_SIZE).toShort(), page.file.getInt(offset))
 
-        constructor(page: NioPageFilePage, idx: Short)
+        constructor(page: MMapPageFilePage, idx: Short)
                 : this(idx, page.file.getInt(page.offset + END_OF_HEADER + idx * INDEX_ENTRY_SIZE))
 
-        constructor(page: NioPageFilePage, entry: NioPageIndexEntry) : this(page, entry.entryOffset)
+        constructor(page: MMapPageFilePage, entry: NioPageIndexEntry) : this(page, entry.entryOffset)
 
         val value
             get() =(offs shl 17) or len or (if (deleted) 0x8000 else 0x0000) or (if (canBeReused) 0x10000 else 0x00000)
 
-        fun setInPage(page: NioPageFilePage) {
+        fun setInPage(page: MMapPageFilePage) {
             page.file.setInt(page.offset + END_OF_HEADER + idx * INDEX_ENTRY_SIZE, value)
         }
 
-        fun offsetInFile(page: NioPageFilePage) = offs + page.offset
+        fun offsetInFile(page: MMapPageFilePage) = offs + page.offset
 
         override fun toString(): String {
             return "IndexEntry(idx=$idx, offs=$offs, len=$len, deleted=$deleted, canBeReused=$canBeReused)"
@@ -374,7 +374,7 @@ class NioPageFilePage(val file: INioPageFile, val offset: Long) {
     operator override fun equals(other: Any?): Boolean {
         if (super.equals(other))
             return true
-        return other is NioPageFilePage && other.file == file && other.offset == offset
+        return other is MMapPageFilePage && other.file == file && other.offset == offset
     }
 
     override fun hashCode(): Int {
@@ -385,17 +385,17 @@ class NioPageFilePage(val file: INioPageFile, val offset: Long) {
 }
 
 class NioPageIndexEntry(val entryOffset: Long) {
-    fun validate(page: NioPageFilePage) {
+    fun validate(page: MMapPageFilePage) {
         if (!isValid(page))
             throw IndexOutOfBoundsException("trying to use entry not in this page")
     }
 
-    fun isValid(page: NioPageFilePage): Boolean {
+    fun isValid(page: MMapPageFilePage): Boolean {
         val indexPtrOc = (entryOffset - page.offset >= END_OF_HEADER
                 && entryOffset - page.offset < page.file.getInt(page.offset + AFTER_ELEMENT_INDEX)
                 || (entryOffset - END_OF_HEADER) % INDEX_ENTRY_SIZE == 0L)
         if (indexPtrOc) {
-            val indexEntry = NioPageFilePage.IndexEntry(page, entryOffset)
+            val indexEntry = MMapPageFilePage.IndexEntry(page, entryOffset)
             return indexEntry.offs < PAGESIZE && indexEntry.offs + indexEntry.len <= PAGESIZE
         }
         return false

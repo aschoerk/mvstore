@@ -3,7 +3,7 @@ package niopagestore
 import nioobjects.TXIdentifier
 import niopageentries.*
 import niopageobjects.MVCCFile
-import niopageobjects.NioPageFile
+import niopageobjects.MMapPageFile
 
 const val PAGE_DB_MAGIC = -0x12568762
 const val PAGE_DB_MAGIC_OFFSET = 4L
@@ -15,7 +15,7 @@ class MMapBTreeDirEntry(val rootPage: Int, val mvcc: Boolean)
 
 }
 
-class MMapDbFile(val file: NioPageFile) {
+class MMapDbFile(val file: MMapPageFile) {
     init {
         val magic = file.getInt(PAGE_DB_MAGIC_OFFSET)
         if (magic != PAGE_DB_MAGIC) {
