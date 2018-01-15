@@ -19,7 +19,7 @@ class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
         val pageNumber = (offset / PAGESIZE).toInt()
         assert(file.isUsed(pageNumber), {"trying to create already freed page"})
     }
-    constructor(file: IMMapPageFile, number: Int) : this(file, number.toLong() * PAGESIZE)
+    constructor(file: IMMapPageFile, number: Int, dummy: Int) : this(file, number.toLong() * PAGESIZE)
     val number
         get() = (offset / PAGESIZE).toInt()
 
@@ -278,7 +278,7 @@ class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
                 it.setInPage(this)
             } else {
                 if (toMove > 0) {
-                    file.move(offset + it.offs, offset + it.offs + toMove, it.len)
+                    file.copy(offset + it.offs, offset + it.offs + toMove, it.len)
                     it.offs += toMove
                     it.setInPage(this)
                 }

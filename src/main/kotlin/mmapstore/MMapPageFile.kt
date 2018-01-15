@@ -7,6 +7,7 @@ package mmapstore
 import niopagestore.*
 import org.agrona.concurrent.MappedResizeableBuffer
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
 
 const val PAGESIZE = 8192L
 
@@ -24,15 +25,32 @@ const val DATAPAGES_PER_FREESPACE_REGION = ((PAGESIZE - START_OF_FREESPACE_MAP) 
 const val PAGES_PER_FREESPACE_REGION = DATAPAGES_PER_FREESPACE_REGION + 1
 
 
+class FileId
+
 interface IMMapPageFile : IMMapBufferWithOffset {
     fun newPage(): MMapPageFilePage
     fun freePage(page: MMapPageFilePage)
+    fun freePage(page: Int)
+    fun getPage(page: Int) : MMapPageFilePage
     fun isUsed(pageNum: Int): Boolean
     fun isFree(pageNum: Int): Boolean
+    val fileId : FileId
+    val lock: ReentrantLock
 }
 
 
 open class MMapPageFile(val buffer: MappedResizeableBuffer, val length: Long) : MMapBufferWithOffset(buffer, 0), IMMapBufferWithOffset, IMMapPageFile {
+    override val lock = ReentrantLock()
+
+    override fun freePage(page: Int) {
+        setFree(page)
+    }
+
+    override fun getPage(page: Int) = MMapPageFilePage(this, page * PAGESIZE)
+
+
+    override val fileId = FileId()
+
     fun checkFreeSpace() {
         (FREESPACE_OFFSET..(length-1) step PAGES_PER_FREESPACE_REGION * PAGESIZE).forEach({
             assert(getInt(it) == FREEMAP_MAGIC)
@@ -55,7 +73,7 @@ open class MMapPageFile(val buffer: MappedResizeableBuffer, val length: Long) : 
         if (pageNum == null)
             throw AssertionError("TODO: extend file")
         setInt(pageNum * PAGESIZE, 0)    // initialize page to show also by content, that it is new
-        return MMapPageFilePage(this, pageNum)
+        return getPage(pageNum)
     }
 
     override fun freePage(page: MMapPageFilePage) = setFree(page.number)
@@ -93,7 +111,7 @@ open class MMapPageFile(val buffer: MappedResizeableBuffer, val length: Long) : 
              */
             override fun next(): MMapPageFilePage {
                 if (hasNext()) {
-                    val result = MMapPageFilePage(this@MMapPageFile, lastPageNumber)
+                    val result = this@MMapPageFile.getPage(lastPageNumber)
                     advance()
                     return result
                 }

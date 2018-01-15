@@ -82,7 +82,7 @@ interface IMMapBTree {
 }
 
 class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
-    var root = MMapPageFilePage(file, rootPage)
+    var root = file.getPage(rootPage)
     override var doCheck: Boolean = false
         get() = field
         set(doCheck) {
@@ -141,7 +141,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
                     if (childPageNumber == null)
                         throw AssertionError("expected childpagenumber to be != null in inner node")
                     else {
-                        val nextLayerPage = MMapPageFilePage(file, childPageNumber)
+                        val nextLayerPage = file.getPage(childPageNumber)
                         val result = insert(nextLayerPage, toInsert, forceUnique)
                         if (result != null) {
                             if (result.key == EmptyPageEntry()) {
@@ -293,7 +293,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
                 if (inner != null) {
                     val childPageNumber = inner.childPageNumber
                     if (childPageNumber != null) {
-                        val soloChild = MMapPageFilePage(file, childPageNumber)
+                        val soloChild = file.getPage(childPageNumber)
                         val soloChildEntries = getSortedEntries(soloChild)
                         assert(soloChildEntries.size > 0)
                         if (soloChildEntries[0].childPageNumber != null) {
@@ -319,7 +319,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
             assert(index > 0)
             val referingEntry = pageEntries[index - 1]
             val nextChildPageNo = referingEntry.childPageNumber ?: throw IndexOutOfBoundsException("entry to be deleted not found in tree")
-            val child = MMapPageFilePage(file, nextChildPageNo)
+            val child = file.getPage(nextChildPageNo)
             val result = delete(child, toDelete, value, toReInsert, level + 1)
             val newEntry = result.second
             if (newEntry != null) {
@@ -358,7 +358,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
                     if (nextChildPageNo == null) {
                         page.remove(greater.indexEntry)
                     } else {
-                        val child = MMapPageFilePage(file, nextChildPageNo)
+                        val child = file.getPage(nextChildPageNo)
 
                         var entryForReplacement = findSmallestEntry(child)
                         if (entryForReplacement == null) {
@@ -404,7 +404,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
                                 }
                                 assert(index > 0)
                                 val prevChildPageNo = pageEntries[index - 1].childPageNumber
-                                val leftPage = (if (prevChildPageNo == null) null else MMapPageFilePage(file, prevChildPageNo)) ?: throw AssertionError("expected left page to be available for merging")
+                                val leftPage = (if (prevChildPageNo == null) null else file.getPage(prevChildPageNo)) ?: throw AssertionError("expected left page to be available for merging")
 
                                 // TODO: do exact calculation of: page fits in predecessor (use freeindexentries)
                                 // leftPage.compactIndexArea()
@@ -491,7 +491,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
         val rightEntry = pageEntries[index - 1]
         // child is small, try to add it to the left
         val prevChildPageNo = pageEntries[index - 2].childPageNumber ?: throw AssertionError("expected left page to be available for merging")
-        val leftPage = MMapPageFilePage(file, prevChildPageNo)
+        val leftPage = file.getPage(prevChildPageNo)
 
         // TODO: do exact calculation of: page fits in predecessor (use freeindexentries)
         return mergeRightToLeft(leftPage, child, rightEntry, page)
@@ -500,7 +500,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
     private fun tryMergeRightToChild(pageEntries: MutableList<MMapBTreeEntry>, index: Int, child: MMapPageFilePage, page: MMapPageFilePage): Boolean {
         val rightEntry = pageEntries[index]
         // leftmost page is small, try to add everything from the right page
-        val rightPage = MMapPageFilePage(file, rightEntry.childPageNumber!!)
+        val rightPage = file.getPage(rightEntry.childPageNumber!!)
         // TODO: do exact calculation of: page fits in predecessor (use freeindexentries)
         return mergeRightToLeft(child, rightPage, rightEntry, page)
     }
@@ -625,7 +625,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
         if (childPageNumber == null)
             return entries[0]
         else {
-            val res = findSmallestEntry(MMapPageFilePage(file, childPageNumber))
+            val res = findSmallestEntry(file.getPage(childPageNumber))
             if (res == null && entries.size > 1)
                 return entries[1]
             else return res
@@ -663,7 +663,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
             val path = Stack<Pair<MMapPageFilePage, Int>>()
 
             init {
-                val p = Pair(MMapPageFilePage(file, root!!.number), 0)
+                val p = Pair(file.getPage(root!!.number), 0)
                 path.push(p)
             }
 
@@ -676,7 +676,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
 
                         val childPageNumber = act.childPageNumber
                         if (childPageNumber != null && top.second == 0) {
-                            val child = MMapPageFilePage(file, childPageNumber)
+                            val child = file.getPage(childPageNumber)
                             path.push(top)  // restore parent
                             path.push(Pair(child, 0))
                         } else {
@@ -702,7 +702,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
                     val result = entries[top.second]
                     val childPageNumber = result.childPageNumber
                     if (childPageNumber != null) {
-                        val child = MMapPageFilePage(file, childPageNumber)
+                        val child = file.getPage(childPageNumber)
                         path.push(top)
                         path.push(Pair(child, 0))
                     } else {
@@ -731,7 +731,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
                 assert(res < -1)
                 val childPageNumber = entries[-res - 2].childPageNumber
                 if (childPageNumber != null)
-                    return find(MMapPageFilePage(file, childPageNumber), key)
+                    return find(file.getPage(childPageNumber), key)
                 else
                     return null
             }
@@ -779,7 +779,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
                     if (entries[0].values.length != 4.toShort()) {
                         result.append("page(${page.number}):Expected length of 4 in values in first entry of page ${page.number}\n")
                     }
-                    if (MMapPageFilePage(file, firstChildPageNumber!!).empty()) {
+                    if (file.getPage(firstChildPageNumber!!).empty()) {
                        //  result.append("page(${page.number}):First innerpage entry has empty leaf child\n")
                     }
 
@@ -813,7 +813,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
                             if (file.isUsed(childPageNumber)) {
                                 val nextSmaller = if (i == 0) smallerEntryKey else entries[i].key
                                 val nextBigger = if (i + 1 < entries.size) entries[i + 1].key else biggerEntryKey
-                                checkPage(MMapPageFilePage(file, childPageNumber), nextSmaller, nextBigger, done, result)
+                                checkPage(file.getPage(childPageNumber), nextSmaller, nextBigger, done, result)
                             } else
                                 result.append("page(${page.number}): refered childpage: $childPageNumber is marked as free\n")
                         }

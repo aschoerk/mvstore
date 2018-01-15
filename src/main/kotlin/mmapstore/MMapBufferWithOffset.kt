@@ -21,7 +21,7 @@ interface IMMapBufferWithOffset {
     fun setBoolean(idx: Long, b: Boolean)
     fun getByteArray(idx: Long, ba: ByteArray)
     fun setByteArray(idx: Long, ba: ByteArray)
-    fun move(from: Long, to: Long, size: Int)
+    fun copy(from: Long, to: Long, size: Int)
 }
 
 open class MMapBufferWithOffset(val b: MappedResizeableBuffer, val offset: Long) : IMMapBufferWithOffset {
@@ -69,7 +69,8 @@ open class MMapBufferWithOffset(val b: MappedResizeableBuffer, val offset: Long)
     override fun getByteArray(idx: Long, ba: ByteArray) = b.getBytes(idx, ba)
     override fun setByteArray(idx: Long, ba: ByteArray) = b.putBytes(idx, ba)
 
-    override fun move(from: Long, to: Long, size: Int) {
+    override fun copy(from: Long, to: Long, size: Int) {
+        // assert ((to < from || to >= from + size) && (from < to || from >= to + size))
         val buffer = ByteArray(size)
         b.getBytes(from, buffer)
         b.putBytes(to, buffer)
