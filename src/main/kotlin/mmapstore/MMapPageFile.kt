@@ -4,7 +4,6 @@
 
 package mmapstore
 
-import niopagestore.*
 import org.agrona.concurrent.MappedResizeableBuffer
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock

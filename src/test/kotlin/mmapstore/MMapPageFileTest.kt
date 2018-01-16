@@ -2,34 +2,62 @@ package mmapstore
 
 import junit.framework.Assert.assertFalse
 import junit.framework.Assert.assertTrue
-import mmapstore.*
-import mmapstore.*
 import org.agrona.concurrent.MappedResizeableBuffer
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.io.RandomAccessFile
 
-class MMapPageFileTest {
-    private var file: MMapPageFile? = null
+class TransactionalMMapPageFileTest : MMapPageFileTest() {
+
+    @Before
+    fun setupTransactionalMMapPageFileTest() {
+        println("test")
+        MVCC.begin()
+        this.file = MVCCFile(this.file!!)
+    }
+
+    @After
+    fun endOfTransactionalMMapPageFileTest() {
+        MVCC.commit()
+    }
+
+    @Test
+    override fun testInitClear() {
+
+    }
+
+    override fun reTra() {
+        MVCC.commit()
+        MVCC.begin()
+    }
+}
+
+open class MMapPageFileTest {
+    protected var file: IMMapPageFile? = null
 
     private var randomAccessFile: RandomAccessFile? = null
 
-    @Before fun setupNioPageFileTest() {
+    @Before
+    fun setupNioPageFileTest() {
         File("/tmp/testfile.bin").delete()
         val f = RandomAccessFile("/tmp/testfile.bin", "rw")
         f.seek(10000 * 8192 - 1)
         f.writeByte(0xFF)
-        val b = MappedResizeableBuffer(f.channel,0L,f.length() )
+        val b = MappedResizeableBuffer(f.channel, 0L, f.length())
         this.file = MMapPageFile(b, f.length())
         this.randomAccessFile = f
     }
 
+    open fun reTra() {
+
+    }
 
 
     @Test
-    fun testInitClear()  {
-        
+    open fun testInitClear() {
+
         val pages: MutableList<MMapPageFilePage> = mutableListOf()
         var lastPage: MMapPageFilePage? = null
         for (i in 0..(randomAccessFile!!.length() / PAGESIZE - 1) - 3) {
@@ -45,31 +73,32 @@ class MMapPageFileTest {
         val freedPages: MutableList<MMapPageFilePage> = mutableListOf()
 
 
+        val realFile = file as MMapPageFile
         for (p in pages) {
-            file!!.freePage(p)
+            realFile!!.freePage(p)
             freedPages.add(p)
             if (p.number % 1000 == 0) {
                 println("iterating through pages")
-                for (l in file!!.usedPagesIterator()) {
+                for (l in realFile!!.usedPagesIterator()) {
                     assertTrue(pages.contains(l))
                     assertFalse(freedPages.contains(l))
                 }
             }
         }
     }
-    
+
     @Test
     fun canAllocateAndDeleteOneEntryInPage() {
         val page = file!!.newPage()
 
         val e = DoublePageEntry(1.111)
-        assertTrue (page.allocationFitsIntoPage(e.length))
+        assertTrue(page.allocationFitsIntoPage(e.length))
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
         assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 3))
         val idx = page.add(e)
         idx.validate(page)
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) - END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt()- (e.length + 4) - END_OF_HEADER - 3))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) - END_OF_HEADER - 3))
         page.removeButKeepIndexEntry(idx)
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - 4 - END_OF_HEADER - 4))
         assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - 4 - END_OF_HEADER - 3))
@@ -86,11 +115,12 @@ class MMapPageFileTest {
         val page = file!!.newPage()
 
         val e = DoublePageEntry(1.111)
-        assertTrue (page.allocationFitsIntoPage(e.length))
+        assertTrue(page.allocationFitsIntoPage(e.length))
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
         assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 3))
         val idx1 = page.add(e)
         idx1.validate(page)
+        reTra()
         val idx2 = page.add(e)
         idx2.validate(page)
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - END_OF_HEADER - 4))
@@ -108,22 +138,22 @@ class MMapPageFileTest {
     }
 
 
-
     @Test
     fun canAllocateAndRemoveOneEntryInPage() {
         val page = file!!.newPage()
 
         val e = DoublePageEntry(1.111)
-        assertTrue (page.allocationFitsIntoPage(e.length))
+        assertTrue(page.allocationFitsIntoPage(e.length))
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
         assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 3))
         val idx = page.add(e)
+        reTra()
         idx.validate(page)
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) - END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt()- (e.length + 4) - END_OF_HEADER - 3))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) - END_OF_HEADER - 3))
         page.remove(idx)
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt()  - END_OF_HEADER - 3))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 3))
     }
 
     @Test
@@ -137,10 +167,11 @@ class MMapPageFileTest {
         val page = file!!.newPage()
 
         val e = DoublePageEntry(1.111)
-        assertTrue (page.allocationFitsIntoPage(e.length))
+        assertTrue(page.allocationFitsIntoPage(e.length))
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
         assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 3))
         val idx1 = page.add(e)
+        reTra()
         idx1.validate(page)
         val idx2 = page.add(e)
         idx2.validate(page)
@@ -148,8 +179,8 @@ class MMapPageFileTest {
         assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - (e.length + 4) * 2 - END_OF_HEADER - 3))
         page.remove(idx2)
         page.remove(idx1)
-        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt()  - 4 - END_OF_HEADER - 4))
-        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() -  4 - END_OF_HEADER - 3))
+        assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - 4 - END_OF_HEADER - 4))
+        assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - 4 - END_OF_HEADER - 3))
     }
 
     @Test
@@ -158,7 +189,7 @@ class MMapPageFileTest {
         canAllocateAndRemoveTwoEntriesInPage()
     }
 
-        @Test
+    @Test
     fun canAllocateAndDeleteAllEntriesInPage() {
         val page = file!!.newPage()
 
@@ -171,12 +202,15 @@ class MMapPageFileTest {
             entries.add(element)
         }
         assertFalse(page.allocationFitsIntoPage(e.length))
+
+        reTra()
         for (e in page.entries()) {
             e.validate(page)
             assertTrue(entries.contains(e))
         }
         var count = 0
-            for (pageIndexEntry in entries.filter { it.entryOffset and 8L == 8L }) {
+        for (pageIndexEntry in entries.filter { it.entryOffset and 8L == 8L }) {
+            reTra()
             page.removeButKeepIndexEntry(pageIndexEntry)
             assertFalse(page.entries().asSequence().contains(pageIndexEntry))
             count++
@@ -184,18 +218,20 @@ class MMapPageFileTest {
             assertFalse(page.allocationFitsIntoPage(e.length * (count + 1)))
         }
         assertTrue(page.allocationFitsIntoPage(count * e.length))
-        assertFalse(page.allocationFitsIntoPage((count +1)* e.length))
+        assertFalse(page.allocationFitsIntoPage((count + 1) * e.length))
         val newMaxEntries = maxEntries - (count * 4 / (e.length + 4) + 1)  // leftover entries
         assertFalse(page.entries().asSequence().any { it.entryOffset and 8L == 8L })
-        assertTrue(page.entries().asSequence().all { it.isValid(page)})
-        val entries2  = mutableListOf<NioPageIndexEntry>()
-        entries2.addAll(entries.filter{it.entryOffset and 8L != 8L})
+        assertTrue(page.entries().asSequence().all { it.isValid(page) })
+        val entries2 = mutableListOf<NioPageIndexEntry>()
+        entries2.addAll(entries.filter { it.entryOffset and 8L != 8L })
 
         for (i in 1..newMaxEntries - (maxEntries - count)) {
             val element = page.add(e)
             element.validate(page)
             entries2.add(element)
         }
+        reTra()
+
         assertFalse(page.allocationFitsIntoPage(e.length))
         for (e in page.entries()) {
             e.validate(page)
@@ -221,6 +257,7 @@ class MMapPageFileTest {
             element.validate(page)
             entries.add(element)
         }
+        reTra()
         assertFalse(page.allocationFitsIntoPage(e.length))
         for (e in page.entries()) {
             e.validate(page)
@@ -234,10 +271,11 @@ class MMapPageFileTest {
             assertTrue(page.allocationFitsIntoPage(e.length * count))
             assertFalse(page.allocationFitsIntoPage(e.length * (count + 1)))
         }
+        reTra()
         assertFalse(page.entries().asSequence().any { it.entryOffset and 8L == 8L })
-        assertTrue(page.entries().asSequence().all { it.isValid(page)})
-        val entries2  = mutableListOf<NioPageIndexEntry>()
-        entries2.addAll(entries.filter{it.entryOffset and 8L != 8L})
+        assertTrue(page.entries().asSequence().all { it.isValid(page) })
+        val entries2 = mutableListOf<NioPageIndexEntry>()
+        entries2.addAll(entries.filter { it.entryOffset and 8L != 8L })
 
         for (i in 1..count) {
             val element = page.add(e)
@@ -293,7 +331,7 @@ class MMapPageFileTest {
             page.add(entry)
             dest.remove(it)
         }
-        assertTrue("${page.countEntries()} != ${testEntries.size}",page.countEntries() == testEntries.size)
+        assertTrue("${page.countEntries()} != ${testEntries.size}", page.countEntries() == testEntries.size)
         assertTrue(dest.countEntries() == 0)
         println("checking original restored page")
         page.entries().asSequence().toList().forEach {
@@ -330,7 +368,7 @@ class MMapPageFileTest {
         val idx1 = page.add(entry)
         val read = unmarshalFrom(file!!, page.offset(idx1))
         page.remove(idx1)
-        assertTrue("entry: $entry, read: $read",entry == read)
+        assertTrue("entry: $entry, read: $read", entry == read)
     }
 
     @Test
@@ -338,7 +376,7 @@ class MMapPageFileTest {
         val page = file!!.newPage()
 
         val e = DoublePageEntry(1.111)
-        assertTrue (page.allocationFitsIntoPage(e.length))
+        assertTrue(page.allocationFitsIntoPage(e.length))
         assertTrue(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 4))
         assertFalse(page.allocationFitsIntoPage(PAGESIZE.toInt() - END_OF_HEADER - 3))
         val idx1 = page.add(e)

@@ -81,6 +81,7 @@ object MVCC {
         assert(getCurrentTransaction() != null)
         assert(threadsForTransactions.containsKey(getCurrentTransaction()))
         threadsForTransactions.remove(getCurrentTransaction())
+        threadLocalTransaction.set(null)
     }
 
     fun setCurrentTransaction(tra: TransactionInfo) {
@@ -173,20 +174,22 @@ object MVCC {
                 val traId = nextTra(transactionInfo.baseId)
                 try {
                     it.value.changedPages.entries.forEach({
-                        val original = file.getPage(it.key)
-                        val orgId = file.getLong(original.offset + CHANGED_BY_TRA_INDEX)
+                        if (it.key != it.value) {
+                            val original = file.getPage(it.key)
+                            val orgId = file.getLong(original.offset + CHANGED_BY_TRA_INDEX)
 
-                        // at the moment: can only handle not overlapping changes
-                        assert(orgId <= transactionInfo.baseId)
-                        if (MVCC.getPreImage(file, it.key, orgId) == null) {
-                            val preImage = file.newPage()
-                            file.copy(original.offset, preImage.offset, PAGESIZE.toInt())
-                            MVCC.addPreImage(file, it.key, orgId, preImage.number)
+                            // at the moment: can only handle not overlapping changes
+                            assert(orgId <= transactionInfo.baseId)
+                            if (MVCC.getPreImage(file, it.key, orgId) == null) {
+                                val preImage = file.newPage()
+                                file.copy(original.offset, preImage.offset, PAGESIZE.toInt())
+                                MVCC.addPreImage(file, it.key, orgId, preImage.number)
+                            }
+                            val copy = file.getPage(it.value)
+                            file.copy(copy.offset, original.offset, PAGESIZE.toInt())
+                            file.setLong(copy.offset + CHANGED_BY_TRA_INDEX, traId)
+                            file.freePage(copy)
                         }
-                        val copy = file.getPage(it.value)
-                        file.copy(copy.offset, original.offset, PAGESIZE.toInt())
-                        file.setLong(copy.offset + CHANGED_BY_TRA_INDEX, traId)
-                        file.freePage(copy)
                     })
                 } finally {
                     file.lock.unlock()
@@ -296,11 +299,11 @@ class MVCCBTree(val btree: IMMapBTree) : IMMapBTree {
 }
 
 
-class MVCCFile(val file: MMapPageFile) : IMMapPageFile {
+class MVCCFile(val file: IMMapPageFile) : IMMapPageFile {
     override val lock: ReentrantLock
         get() = file.lock
 
-    override fun getPage(page: Int): MMapPageFilePage = file.getPage(page)
+    override fun getPage(page: Int): MMapPageFilePage = MMapPageFilePage(this, convertOffset(page * PAGESIZE))
 
     override val fileId: FileId
         get() = file.fileId
@@ -314,7 +317,7 @@ class MVCCFile(val file: MMapPageFile) : IMMapPageFile {
             try {
                 if (!transactionInfo.getFileChangeInfo(this).pageAlreadyChanged(pageNo)) {
                     val newPage = file.newPage()
-                    file.copy(pageNo * PAGESIZE, newPage.offset, PAGESIZE.toInt())
+                    file.copy(convertOffset(pageNo * PAGESIZE), newPage.offset, PAGESIZE.toInt())
                     transactionInfo.getFileChangeInfo(this).mapPage(pageNo, newPage.number)
                     file.setLong(newPage.offset + CHANGED_BY_TRA_INDEX, transactionInfo.baseId)
                 }
@@ -324,7 +327,7 @@ class MVCCFile(val file: MMapPageFile) : IMMapPageFile {
         }
     }
 
-    override fun getByte(idx: Long) = file.getByte(convertOffset(idx))
+    override fun getByte(idx: Long) = file.getByte(idx)
 
     private fun convertOffset(idx: Long): Long {
         var pageNo = (idx / PAGESIZE).toInt()
@@ -402,10 +405,11 @@ class MVCCFile(val file: MMapPageFile) : IMMapPageFile {
     }
 
     override fun newPage(): MMapPageFilePage {
-        var result = file.newPage()
+        var result = getPage(file.newPage().number)
         val transactionInfo = MVCC.getCurrentTransaction()
         if (transactionInfo != null) {
             file.setLong(result.offset + CHANGED_BY_TRA_INDEX, transactionInfo.baseId)
+            transactionInfo.getFileChangeInfo(this).mapPage(result.number, result.number)
         }
         return result
     }
