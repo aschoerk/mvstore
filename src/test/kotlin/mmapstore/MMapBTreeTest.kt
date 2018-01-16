@@ -11,13 +11,13 @@ import java.util.*
 /**
  * @author aschoerk
  */
-class MMapBtreeTest {
 
-    private var randomAccessFile: RandomAccessFile? = null
+open class MMapBTreeTestBase {
+    protected var randomAccessFile: RandomAccessFile? = null
 
-    private var file: MMapDbFile? = null
+    protected var file: MMapDbFile? = null
 
-    @Before fun setupNioPageFileTest() {
+    @Before fun setupMMapBtreeTestBase() {
         File("/tmp/testfile.bin").delete()
         val f = RandomAccessFile("/tmp/testfile.bin", "rw")
         f.seek(100000 * 8192 - 1)
@@ -26,6 +26,11 @@ class MMapBtreeTest {
         this.file = MMapDbFile(MMapPageFile(b, f.length()))
         this.randomAccessFile = f
     }
+
+}
+
+class MMapBTreeTest : MMapBTreeTestBase() {
+
 
     @Test
     fun simpleBTreeTest() {

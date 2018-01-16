@@ -76,19 +76,30 @@ object MVCC {
     val preImagesPerFile = mutableMapOf<IMMapPageFile,MutableMap<Int, MutableList<TraIdPageNo>>>()
 
     var threadLocalTransaction: ThreadLocal<TransactionInfo> = ThreadLocal()
+    val transactions = mutableMapOf<Short,TransactionInfo>()
+    val threadsForTransactions = mutableMapOf<Short, Long>()
+
+    var lastTraId = 0L
 
     fun clearCurrentTransaction() {
         assert(getCurrentTransaction() != null)
-        assert(threadsForTransactions.containsKey(getCurrentTransaction()))
-        threadsForTransactions.remove(getCurrentTransaction())
+        val traId = getCurrentTransaction()!!.id
+        assert(transactions.contains(traId))
+        assert(threadsForTransactions.containsKey(traId))
+        threadsForTransactions.remove(traId)
         threadLocalTransaction.set(null)
     }
 
     fun setCurrentTransaction(tra: TransactionInfo) {
         synchronized(this) {
-            assert(!threadsForTransactions.containsKey(tra))
+            assert(transactions.contains(tra.id))
+            assert(!threadsForTransactions.containsKey(tra.id))
+            if (threadLocalTransaction.get() != null) {
+                assert(threadsForTransactions.containsKey(threadLocalTransaction.get().id))
+                threadsForTransactions.remove(threadLocalTransaction.get().id)
+            }
             threadLocalTransaction.set(tra)
-            threadsForTransactions[tra] = Thread.currentThread().id
+            threadsForTransactions[tra.id] = Thread.currentThread().id
         }
     }
 
@@ -96,10 +107,6 @@ object MVCC {
         return threadLocalTransaction.get()
     }
 
-    val transactions = mutableMapOf<Short,TransactionInfo>()
-    val threadsForTransactions = mutableMapOf<TransactionInfo, Long>()
-
-    var lastTraId = 0L
 
     fun nextTra(traId: Short) : Long {
         lastTraId = changes.incrementAndGet() shl 16 or traId.toLong()
@@ -152,13 +159,10 @@ object MVCC {
     // - isolated:
     // - durable
     fun begin(): TransactionInfo {
-        if (getCurrentTransaction() != null) {
-            throw IllegalStateException("Transaction running")
-        }
 
         val transactionInfo = TransactionInfo()
-        setCurrentTransaction(transactionInfo)
         transactions[transactionInfo.id] = transactionInfo
+        setCurrentTransaction(transactionInfo)
         return transactionInfo
     }
 
@@ -167,6 +171,7 @@ object MVCC {
         if (transactionInfo == null) {
             throw IllegalStateException("No Transaction running")
         }
+        clearCurrentTransaction()
         try {
             transactionInfo.fileChangeInfo.entries.forEach({
                 val file = it.key
@@ -196,7 +201,7 @@ object MVCC {
                 }
             })
         } finally {
-            clearCurrentTransaction()
+
             cleanup(transactionInfo!!)
         }
     }
@@ -222,6 +227,7 @@ object MVCC {
                 }
             })
         }
+        transactions.remove(transactionInfo.id)
     }
 
     fun rollback() {
@@ -303,7 +309,7 @@ class MVCCFile(val file: IMMapPageFile) : IMMapPageFile {
     override val lock: ReentrantLock
         get() = file.lock
 
-    override fun getPage(page: Int): MMapPageFilePage = MMapPageFilePage(this, convertOffset(page * PAGESIZE))
+    override fun getPage(page: Int): MMapPageFilePage = MMapPageFilePage(this,page * PAGESIZE)
 
     override val fileId: FileId
         get() = file.fileId
@@ -327,8 +333,6 @@ class MVCCFile(val file: IMMapPageFile) : IMMapPageFile {
         }
     }
 
-    override fun getByte(idx: Long) = file.getByte(idx)
-
     private fun convertOffset(idx: Long): Long {
         var pageNo = (idx / PAGESIZE).toInt()
 
@@ -340,22 +344,29 @@ class MVCCFile(val file: IMMapPageFile) : IMMapPageFile {
             if (pno != null) {
                 return pno * PAGESIZE + idx % PAGESIZE
             } else {
-                val pno = MVCC.getMinimalPreImage(file, pageNo, transactionInfo.baseId)
-                if (pno != null)
-                    return pno * PAGESIZE + idx % PAGESIZE
-                else
+                val currentTraId = file.getLong(pageNo * PAGESIZE + CHANGED_BY_TRA_INDEX)
+                if (currentTraId > transactionInfo.baseId) {
+                    val pno = MVCC.getMinimalPreImage(this, pageNo, transactionInfo.baseId)
+                    if (pno != null)
+                        return pno * PAGESIZE + idx % PAGESIZE
+                    else
+                        return idx
+                } else {
                     return idx
+                }
             }
         }
         return idx
     }
+
+    override fun getByte(idx: Long) = file.getByte(convertOffset(idx))
 
     override fun setByte(idx: Long, i: Byte) {
         copyPageIfNecessary(idx)
         file.setByte(convertOffset(idx), i)
     }
 
-    override fun getChar(idx: Long) = file.getChar(idx)
+    override fun getChar(idx: Long) = file.getChar(convertOffset(idx))
     override fun setChar(idx: Long, c: Char) {
         copyPageIfNecessary(idx)
         file.setChar(convertOffset(idx), c)
