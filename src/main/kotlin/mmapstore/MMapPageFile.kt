@@ -35,11 +35,15 @@ interface IMMapPageFile : IMMapBufferWithOffset {
     fun isFree(pageNum: Int): Boolean
     val fileId : FileId
     val lock: ReentrantLock
+    val wrappedFile: IMMapPageFile
 }
 
 
 open class MMapPageFile(val buffer: MappedResizeableBuffer, val length: Long) : MMapBufferWithOffset(buffer, 0), IMMapBufferWithOffset, IMMapPageFile {
     override val lock = ReentrantLock()
+
+    override val wrappedFile: IMMapPageFile
+        get() { throw AssertionError("wrappedFile requested at original"); }
 
     override fun freePage(page: Int) {
         setFree(page)
@@ -164,14 +168,6 @@ open class MMapPageFile(val buffer: MappedResizeableBuffer, val length: Long) : 
 
     override fun isFree(pageNum: Int): Boolean {
         return getByte(freespaceRegionOffset(pageNum) + freespaceByteOffset(pageNum)).toInt() and freespaceByteMask(pageNum) == 0
-    }
-
-
-    private fun setUsed(pageNum: Int) {
-        val tmp = getByte(freespaceRegionOffset(pageNum) + freespaceByteOffset(pageNum)).toInt()
-        val mask = freespaceByteMask(pageNum)
-        assert(tmp and mask == 0)
-        setByte(freespaceRegionOffset(pageNum) + freespaceByteOffset(pageNum), (tmp or mask).toByte())
     }
 
     private fun setFree(pageNum: Int) {

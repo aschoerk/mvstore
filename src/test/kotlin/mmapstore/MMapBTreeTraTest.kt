@@ -10,6 +10,7 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
     @Test
     fun simpleBTreeTraTest() {
         val tree = file!!.createBTree("test", true)
+        tree.doCheck = true
         val tra1 = MVCC.begin()
         val tra2 = MVCC.begin()
         val value = StringPageEntry("Long string to be added as Value into tree but is it long enough??")
@@ -28,8 +29,9 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
         val tra3 = MVCC.begin()
         val tra4 = MVCC.begin()
         (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) != null)}
-        for (i in 1..100) {
-            tree.remove(DoublePageEntry(i.toDouble()), value)
+        (1..100).forEach {
+            assert(tree.find(DoublePageEntry(it.toDouble())) != null)
+            tree.remove(DoublePageEntry(it.toDouble()), value)
         }
         (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}
         // not deleted in tra4

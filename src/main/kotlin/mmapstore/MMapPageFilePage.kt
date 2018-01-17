@@ -12,6 +12,9 @@ const val BEGIN_OF_PAYLOAD_POS_INDEX = 12  // stores the beginning of the payloa
 const val CHANGED_BY_TRA_INDEX = 16   // stores information about who changed the page last
 const val INDEX_ENTRY_SIZE = 4
 
+const val PREIMAGE_PAGE = 0x2000
+const val TRANSACTION_PAGE = 0x1000
+
 
 class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
     init {
@@ -22,6 +25,28 @@ class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
     constructor(file: IMMapPageFile, number: Int) : this(file, number.toLong() * PAGESIZE)
     val number
         get() = (offset / PAGESIZE).toInt()
+
+    var preImage: Boolean
+        get() = (file.getShort(offset + FLAGS_INDEX).toInt() and PREIMAGE_PAGE) != 0
+        set(value) {
+            val current = preImage
+            if (value && !current)
+                file.setShort(offset + FLAGS_INDEX, (file.getShort(offset + FLAGS_INDEX).toInt() or PREIMAGE_PAGE).toShort())
+            else
+                if (!value && current)
+                    file.setShort(offset + FLAGS_INDEX, (file.getShort(offset + FLAGS_INDEX).toInt() xor PREIMAGE_PAGE).toShort())
+        }
+
+    var traPage: Boolean
+        get() = (file.getShort(offset + FLAGS_INDEX).toInt() and TRANSACTION_PAGE) != 0
+        set(value) {
+            val current = preImage
+            if (value && !current)
+                file.setShort(offset + FLAGS_INDEX, (file.getShort(offset + FLAGS_INDEX).toInt() or TRANSACTION_PAGE).toShort())
+            else
+                if (!value && current)
+                    file.setShort(offset + FLAGS_INDEX, (file.getShort(offset + FLAGS_INDEX).toInt() xor TRANSACTION_PAGE).toShort())
+        }
 
     init {
         if (file.getInt(offset) == 0) {
