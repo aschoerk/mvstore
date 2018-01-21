@@ -16,6 +16,7 @@ class TransactionInfo() {
             return changedPages?.containsKey(pageNo) ?: false
         }
 
+        // originalNo == copyNo if it has no original, i.e. split during insert
         fun mapPage(originalNo: Int, copyNo: Int) {
             assert (!changedPages.containsKey(originalNo))
             changedPages[originalNo] = copyNo
@@ -148,15 +149,16 @@ object MVCC {
     fun addPreImage(file: IMMapPageFile, pageNo: Int, traId: Long, preImageNo: Int) {
         assert (!file.getPage(pageNo).preImage)
         assert (!file.getPage(pageNo).traPage)
-        file.getPage(pageNo).preImage = true
+        assert (!file.getPage(preImageNo).preImage)
+        file.getPage(preImageNo).preImage = true
         val preImagesOfFile = getPreImagesOfFile(file)
         synchronized(preImagesOfFile) {
-            var existing = preImagesOfFile[pageNo]
-            if (existing == null) {
-                existing = mutableListOf()
-                preImagesOfFile[pageNo] = existing
+            var preImagesOfPage = preImagesOfFile[pageNo]
+            if (preImagesOfPage == null) {
+                preImagesOfPage = mutableListOf()
+                preImagesOfFile[pageNo] = preImagesOfPage
             }
-            existing.add(TraIdPageNo(traId, preImageNo, lastTraId))
+            preImagesOfPage.add(TraIdPageNo(traId, preImageNo, lastTraId))
         }
     }
 
@@ -181,27 +183,37 @@ object MVCC {
         }
         clearCurrentTransaction()
         try {
+            // save all changed pages as preImages, so that current running transactions
+            // can yet read expected data.
             transactionInfo.fileChangeInfo.entries.forEach({
                 val wrappedFile = it.key.wrappedFile
                 wrappedFile.lock.lock()
                 val traId = nextTra(transactionInfo.baseId)
                 try {
                     it.value.changedPages.entries.forEach({
+                        val original = wrappedFile.getPage(it.key)
                         if (it.key != it.value) {
-                            val original = wrappedFile.getPage(it.key)
                             val orgId = wrappedFile.getLong(original.offset + CHANGED_BY_TRA_INDEX)
-
+                            assert (!original.traPage) // trapages are exclusive per transaction, cannot be original
                             // at the moment: can only handle not overlapping changes
-                            assert(orgId <= transactionInfo.baseId)
+                            assert(orgId < transactionInfo.baseId)
+                            // save preimage of original
                             if (MVCC.getPreImage(wrappedFile, it.key, orgId) == null) {
                                 val preImage = wrappedFile.newPage()
+                                println("creating preimage ${preImage.number} for ${original.number}")
                                 wrappedFile.copy(original.offset, preImage.offset, PAGESIZE.toInt())
                                 MVCC.addPreImage(wrappedFile, it.key, orgId, preImage.number)
                             }
                             val copy = wrappedFile.getPage(it.value)
+                            assert (copy.traPage)
+                            copy.traPage = false  // make sure it will not be seen in original
                             wrappedFile.copy(copy.offset, original.offset, PAGESIZE.toInt())
-                            wrappedFile.setLong(copy.offset + CHANGED_BY_TRA_INDEX, traId)
+                            wrappedFile.setLong(original.offset + CHANGED_BY_TRA_INDEX, traId)
                             wrappedFile.freePage(copy)
+                        } else {
+                            // page newly necessary in this transaction, so clear only traPage-Bit
+                            assert(original.traPage)
+                            original.traPage = false
                         }
                     })
                 } finally {
@@ -218,21 +230,21 @@ object MVCC {
         // transactionInfo must be in transactions
         if (transactionInfo.id <= transactions.keys.min()!!) {
             preImagesPerFile.entries.forEach({
-                val wrappedFile = it.key.wrappedFile
-                wrappedFile.lock.lock()
+                val file = it.key
+                file.lock.lock()
                 try {
                     it.value.entries.forEach({
                         val orgPage = it.key
                         val preImages = it.value
                         preImages.filter { it.currentMaxTraId <= transactionInfo.baseId }.forEach({
-                            assert(wrappedFile.getPage(it.pageNo).preImage)
-                            wrappedFile.freePage(it.pageNo)
+                            assert(file.getPage(it.pageNo).preImage)
+                            file.freePage(it.pageNo)
                             preImages.remove(it)
                         })
                     })
 
                 } finally {
-                    it.key.lock.unlock()
+                    file.lock.unlock()
                 }
             })
         }
@@ -335,6 +347,8 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
             lock.lock()
             try {
                 if (!transactionInfo.getFileChangeInfo(this).pageAlreadyChanged(pageNo)) {
+                    assert(!wrappedFile.getPage(pageNo).traPage)
+                    assert(!wrappedFile.getPage(pageNo).preImage)  // not supported yet
                     val newPage = wrappedFile.newPage()
                     wrappedFile.copy(convertOffset(pageNo * PAGESIZE), newPage.offset, PAGESIZE.toInt())
                     transactionInfo.getFileChangeInfo(this).mapPage(pageNo, newPage.number)
@@ -440,6 +454,7 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
         if (transactionInfo != null) {
             wrappedFile.setLong(result.offset + CHANGED_BY_TRA_INDEX, transactionInfo.baseId)
             transactionInfo.getFileChangeInfo(this).mapPage(result.number, result.number)
+            result.traPage = true
         }
         return result
     }
@@ -459,8 +474,9 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
         val transactionInfo = MVCC.getCurrentTransaction()
         if (transactionInfo != null) {
             val mappedPage = convertPage(page)
+
             if ( wrappedFile.getLong(mappedPage * PAGESIZE + CHANGED_BY_TRA_INDEX) == transactionInfo.baseId) {
-                transactionInfo.getFileChangeInfo(this).mapPage(page, null)
+                transactionInfo.getFileChangeInfo(this).unmapPage(page)
                 // page was allocated for and during this transaction
                 wrappedFile.freePage(mappedPage)
             } else {

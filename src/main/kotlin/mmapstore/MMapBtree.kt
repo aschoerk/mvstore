@@ -277,7 +277,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
                 for (e in leftChildEntries) {
                     newLeftChild.add(e)
                 }
-                tmp.clear()
+                tmp.clearContents()
                 val firstRootElement = MMapBTreeEntry(EmptyPageEntry(), EmptyPageEntry())
                 firstRootElement.childPageNumber = newLeftChild.number
                 tmp.add(firstRootElement)
@@ -297,7 +297,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
                         val soloChildEntries = getSortedEntries(soloChild)
                         assert(soloChildEntries.size > 0)
                         if (soloChildEntries[0].childPageNumber != null) {
-                            tmp.clear()
+                            tmp.clearContents()
                             for (e in soloChildEntries) {
                                 tmp.add(e)
                             }

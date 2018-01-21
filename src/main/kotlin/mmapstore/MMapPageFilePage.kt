@@ -20,7 +20,7 @@ class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
     init {
         assert(offset > PAGESIZE,{"invalid offset: $offset first page in file reserved"})
         val pageNumber = (offset / PAGESIZE).toInt()
-        assert(file.isUsed(pageNumber), {"trying to create already freed page"})
+        // assert(file.isUsed(pageNumber), {"trying to create already freed page"})
     }
     constructor(file: IMMapPageFile, number: Int) : this(file, number.toLong() * PAGESIZE)
     val number
@@ -40,28 +40,35 @@ class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
     var traPage: Boolean
         get() = (file.getShort(offset + FLAGS_INDEX).toInt() and TRANSACTION_PAGE) != 0
         set(value) {
-            val current = preImage
-            if (value && !current)
+            val current = traPage
+            assert (current != value)
+            if (value && !current) {
                 file.setShort(offset + FLAGS_INDEX, (file.getShort(offset + FLAGS_INDEX).toInt() or TRANSACTION_PAGE).toShort())
+                println("setting trapage for $number")
+            }
             else
-                if (!value && current)
+                if (!value && current) {
                     file.setShort(offset + FLAGS_INDEX, (file.getShort(offset + FLAGS_INDEX).toInt() xor TRANSACTION_PAGE).toShort())
+                    println("clearin trapage for $number")
+                }
         }
 
     init {
         if (file.getInt(offset) == 0) {
             // automatically initialize when coming from freespace
-            clear()
+            file.setShort(offset + FLAGS_INDEX, 0x4000)
+            file.setLong(offset + CHANGED_BY_TRA_INDEX, 0L)
+            clearContents()
         }
     }
 
-    fun clear() {
-        file.setShort(offset + FLAGS_INDEX, 0x4000)
+    fun clearContents() {
+        // file.setShort(offset + FLAGS_INDEX, 0x4000)
+        // file.setLong(offset + CHANGED_BY_TRA_INDEX, 0L)
         file.setShort(offset + FREE_ENTRY_INDEX, 0)
         file.setInt(offset + FREE_SPACE_INDEX, PAGESIZE.toInt() - END_OF_HEADER)
         file.setInt(offset + AFTER_ELEMENT_INDEX, END_OF_HEADER)  // no payload there, ends immediately after the header
         file.setInt(offset + BEGIN_OF_PAYLOAD_POS_INDEX, PAGESIZE.toInt())  // no payload there, set after the page
-        file.setLong(offset + CHANGED_BY_TRA_INDEX, 0L)
     }
 
     class IndexEntry(val idx: Short,
