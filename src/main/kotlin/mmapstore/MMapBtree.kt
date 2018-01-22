@@ -527,6 +527,7 @@ class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
                 }
             }
             leftPage.add(rightEntry)
+
             page.remove(rightEntry.indexEntry!!)
             file.freePage(rightPage)
             return true
