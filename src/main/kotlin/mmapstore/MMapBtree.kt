@@ -20,9 +20,8 @@ class MMapBTreeEntry(val key: ComparableMMapPageEntry, val values: ListPageEntry
         values.marshalTo(file, offset + key.length)
         if (childPageNumber != null) {
             file.setInt(offset + key.length + values.length, childPageNumber ?: 0)
-        } else {
-            values.marshalTo(file, offset + key.length)
         }
+
     }
 
     override fun equals(other: Any?): Boolean {
@@ -69,6 +68,11 @@ fun unmarshallEntry(page: MMapPageFilePage, indexEntry: MMapPageFilePage.IndexEn
         result.childPageNumber = childpage
     }
     return result
+}
+
+fun unmarshallEntry(page: MMapPageFilePage, offset: Long): MMapBTreeEntry {
+    val indexEntry = MMapPageFilePage.IndexEntry(page, offset)
+    return unmarshallEntry(page, indexEntry)
 }
 
 interface IMMapBTree {

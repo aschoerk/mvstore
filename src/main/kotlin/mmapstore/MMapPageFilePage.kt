@@ -343,8 +343,15 @@ class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
             throw IndexOutOfBoundsException("can't add new entry in this page")
         val indexEntry = allocate(entry.length)
 
-        if (indexEntry != null)
-            entry.marshalTo(file,  offset + indexEntry.offs)
+        if (indexEntry != null) {
+            entry.marshalTo(file, offset + indexEntry.offs)
+            val check = unmarshallEntry(this, indexEntry)
+            entry as MMapBTreeEntry
+            assert (check.key == entry.key)
+            assert (check.values == entry.values)
+            assert (check.childPageNumber == entry.childPageNumber)
+
+        }
         return NioPageIndexEntry(offset + END_OF_HEADER + indexEntry.idx * INDEX_ENTRY_SIZE)
     }
 

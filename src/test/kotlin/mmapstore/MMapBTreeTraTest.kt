@@ -71,8 +71,11 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
         val value = StringPageEntry("Long string to be added as Value into tree but is it long enough??")
         val valNumber = 70
         for (i in 1..valNumber) {
+            println("run: $i")
             tree.insert(DoublePageEntry(i.toDouble()), value)
+            (1..i).forEach { println("$it: ${tree.find(DoublePageEntry(it.toDouble()))}")}
         }
+
         //(1..valNumber).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) != null)}
         (1..valNumber).forEach {
             assert(tree.find(DoublePageEntry(it.toDouble())) != null)
