@@ -1,6 +1,7 @@
 package mmapstore
 
 import org.junit.Test
+import kotlin.test.assertEquals
 
 /**
  * @author aschoerk
@@ -28,6 +29,70 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
             tree.iterator().forEach { println("      $it, ") }
         }
         MVCC.commit()
+    }
+
+    @Test
+    fun testByte() {
+        testPEs(BytePageEntry(1), BytePageEntry(2))
+    }
+
+    @Test
+    fun testBoolean() {
+        testPEs(BooleanPageEntry(true), BooleanPageEntry(true))
+    }
+
+    @Test
+    fun testShort() {
+        testPEs(ShortPageEntry(1), ShortPageEntry(2))
+    }
+
+    @Test
+    fun testInt() {
+        testPEs(IntPageEntry(1), IntPageEntry(2))
+    }
+
+    @Test
+    fun testLong() {
+        testPEs(LongPageEntry(1), LongPageEntry(2))
+    }
+
+    @Test
+    fun testFloat() {
+        testPEs(FloatPageEntry(1.0f), FloatPageEntry(2.0f))
+    }
+
+    @Test
+    fun testDouble() {
+        testPEs(DoublePageEntry(1.0), DoublePageEntry(2.0))
+    }
+
+    @Test
+    fun testString() {
+        testPEs(StringPageEntry("1.0"), StringPageEntry("2.0"))
+    }
+
+    @Test
+    fun testByteArray() {
+        testPEs(ByteArrayPageEntry("1.0".toByteArray()), ByteArrayPageEntry("2.0".toByteArray()))
+    }
+
+    private fun testPEs(a: MMapPageEntry, b: MMapPageEntry) {
+        val testPage = file!!.file.newPage()
+        testPage.add(a)
+        MVCC.begin()
+        testPage.add(b)
+        val check = {
+            assertEquals(2,testPage.countEntries())
+            testPage.entries().forEach {
+                val res = unmarshalFrom(file!!.file, it)
+                assert(res.type == a.type)
+
+                assert(res == a || res == b)
+            }
+        }
+        check()
+        MVCC.commit()
+        check()
     }
 
     @Test

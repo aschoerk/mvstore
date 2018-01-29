@@ -342,6 +342,7 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
 
     fun copyPageIfNecessary(idx: Long) {
         val pageNo = (idx / PAGESIZE).toInt()
+        println("copy page if necessary: $pageNo")
         val transactionInfo = MVCC.getCurrentTransaction()
         if (transactionInfo != null) {
             lock.lock()
@@ -354,6 +355,7 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
                     transactionInfo.getFileChangeInfo(this).mapPage(pageNo, newPage.number)
                     newPage.traPage = true
                     wrappedFile.setLong(newPage.offset + CHANGED_BY_TRA_INDEX, transactionInfo.baseId)
+                    println("copied page if necessary: $pageNo to ${newPage.number}")
                 }
             } finally {
                 lock.unlock()
@@ -370,11 +372,15 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
             var maxChange = Long.MAX_VALUE
             val pno = transactionInfo.getFileChangeInfo(this).changedPages[pageNo]
             if (pno != null) {
+               // if (pno.toLong() != idx / PAGESIZE)
+                    // println("converted Offset1: ${pno!! * PAGESIZE + idx % PAGESIZE} page: ${pno} was $pageNo")
                 return pno * PAGESIZE + idx % PAGESIZE
             } else {
                 val currentTraId = wrappedFile.getLong(pageNo * PAGESIZE + CHANGED_BY_TRA_INDEX)
                 if (currentTraId > transactionInfo.baseId) {
                     val pno = MVCC.getMinimalPreImage(this.wrappedFile, pageNo, transactionInfo.baseId)
+                    if (pno!!.toLong() != idx / PAGESIZE)
+                        println("converted Offset2: ${pno!! * PAGESIZE + idx % PAGESIZE} page: ${pno} was $pageNo")
                     if (pno != null)
                         return pno * PAGESIZE + idx % PAGESIZE
                     else
@@ -437,7 +443,7 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
     override fun getBoolean(idx: Long): Boolean = getByte(idx) != 0.toByte()
     override fun setBoolean(idx: Long, b: Boolean) = setByte(idx, (if (b) 1 else 0).toByte())
 
-    override fun getByteArray(idx: Long, ba: ByteArray) = wrappedFile.getByteArray(idx, ba)
+    override fun getByteArray(idx: Long, ba: ByteArray) = wrappedFile.getByteArray(convertOffset(idx), ba)
     override fun setByteArray(idx: Long, ba: ByteArray) {
         copyPageIfNecessary(idx)
         wrappedFile.setByteArray(convertOffset(idx), ba)
@@ -456,6 +462,7 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
             transactionInfo.getFileChangeInfo(this).mapPage(result.number, result.number)
             result.traPage = true
         }
+        println("New Page: ${result.number}")
         return result
     }
 
@@ -471,19 +478,22 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
      * - a not anyhow mapped image
      */
     override fun freePage(page: Int) {
+        println("freePage: $page")
         val transactionInfo = MVCC.getCurrentTransaction()
         if (transactionInfo != null) {
             val mappedPage = convertPage(page)
-
+            println("freePage: mapped to: $mappedPage")
             if ( wrappedFile.getLong(mappedPage * PAGESIZE + CHANGED_BY_TRA_INDEX) == transactionInfo.baseId) {
                 transactionInfo.getFileChangeInfo(this).unmapPage(page)
                 // page was allocated for and during this transaction
                 wrappedFile.freePage(mappedPage)
+                println("actually freed Page: $mappedPage")
             } else {
                 transactionInfo.getFileChangeInfo(this).unmapPage(page)
             }
         } else {
             wrappedFile.freePage(page)
+            println("actually freed Page: $page")
         }
     }
 

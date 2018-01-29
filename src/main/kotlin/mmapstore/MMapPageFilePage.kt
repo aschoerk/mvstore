@@ -345,13 +345,6 @@ class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
 
         if (indexEntry != null) {
             entry.marshalTo(file, offset + indexEntry.offs)
-            val check = unmarshallEntry(this, indexEntry)
-            entry as MMapBTreeEntry
-            assert (check.key == entry.key)
-            // if (check.values.javaClass == entry.values.javaClass)
-            //    assert (check.values == entry.values)
-            assert (check.childPageNumber == entry.childPageNumber)
-
         }
         return NioPageIndexEntry(offset + END_OF_HEADER + indexEntry.idx * INDEX_ENTRY_SIZE)
     }
