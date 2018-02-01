@@ -70,7 +70,7 @@ open class MMapBufferWithOffset(val b: MappedResizeableBuffer, val offset: Long)
     override fun setByteArray(idx: Long, ba: ByteArray) = b.putBytes(idx, ba)
 
     override fun copy(from: Long, to: Long, size: Int) {
-        println("copying $size from page: ${from/ PAGESIZE} to page: ${to/PAGESIZE}")
+        // println("copying $size from page: ${from/ PAGESIZE} to page: ${to/PAGESIZE}")
         // assert ((to < from || to >= from + size) && (from < to || from >= to + size))
         val buffer = ByteArray(size)
         b.getBytes(from, buffer)

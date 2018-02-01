@@ -342,7 +342,6 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
 
     fun copyPageIfNecessary(idx: Long) {
         val pageNo = (idx / PAGESIZE).toInt()
-        println("copy page if necessary: $pageNo")
         val transactionInfo = MVCC.getCurrentTransaction()
         if (transactionInfo != null) {
             lock.lock()
