@@ -52,7 +52,7 @@ abstract class MMapPageNumberEntryBase(val number: Number) {
 }
 
 open class ListPageEntry(c: Collection<MMapPageEntry>) : ComparableMMapPageEntry {
-    constructor(a: Array<MMapPageEntry>) : this(a.toList())
+    constructor(vararg args: MMapPageEntry) : this(args.toList())
     val a = c.toMutableList()
     override fun compareTo(other: ComparableMMapPageEntry): Int {
         if (this == other) return 0
@@ -405,7 +405,7 @@ fun unmarshalFrom(file: IMMapPageFile, offset: Long): ComparableMMapPageEntry {
                 a.add(el)
                 currentOffset += el.length
             }
-            return ListPageEntry(a.toTypedArray())
+            return ListPageEntry(a)
         }
         EMPTY -> {
             return EmptyPageEntry()

@@ -10,7 +10,7 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
 
     @Test
     fun simpleBTreeTestWithValueWithoutSplit() {
-        val tree = file!!.createBTree("test")
+        val tree = file!!.createBTree("test", true)
         tree.doCheck = true
         val tra1 = MVCC.begin()
 
@@ -76,8 +76,11 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
         testPEs(ByteArrayPageEntry("1.0".toByteArray()), ByteArrayPageEntry("2.0".toByteArray()))
     }
 
-    private fun testPEs(a: MMapPageEntry, b: MMapPageEntry) {
-        val testPage = file!!.file.newPage()
+    private fun testPEs(a: MMapPageEntry, b: MMapPageEntry, level: Int = 0) {
+        if (level > 3)
+            return
+        val tree = file!!.createBTree("test") as MMapBTree
+        val testPage = tree.file.newPage()
         testPage.add(a)
         MVCC.begin()
         testPage.add(b)
@@ -85,14 +88,15 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
             assertEquals(2,testPage.countEntries())
             testPage.entries().forEach {
                 val res = unmarshalFrom(file!!.file, it)
-                assert(res.type == a.type)
-
+                assert(res.type == a.type || res.type == b.type)
                 assert(res == a || res == b)
             }
         }
         check()
         MVCC.commit()
         check()
+        val lpe = ListPageEntry(a, b)
+        testPEs(lpe, b, level + 1)
     }
 
     @Test
