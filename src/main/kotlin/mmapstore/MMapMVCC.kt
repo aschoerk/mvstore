@@ -87,6 +87,16 @@ object MVCC {
 
     var lastTraId = 0L
 
+    fun init() {
+        threadLocalTransaction = ThreadLocal()
+        changes.set(0)
+        transactionIds.set(0)
+        startTime = System.currentTimeMillis()
+        preImagesPerFile.clear()
+        transactions.clear()
+        threadsForTransactions.clear()
+    }
+
     fun clearCurrentTransaction() {
         assert(getCurrentTransaction() != null)
         val traId = getCurrentTransaction()!!.id
@@ -221,7 +231,6 @@ object MVCC {
                 }
             })
         } finally {
-
             cleanup(transactionInfo!!)
         }
     }

@@ -314,7 +314,7 @@ open class MMapPageFileTest {
         println("checking original page")
         page.entries().asSequence().toList().sortedBy { it.entryOffset }.forEach {
             println("entry: $it")
-            val entry = unmarshalFrom(file!!, it)
+            val entry = unmarshalFrom(page, it)
             println("entry: $entry")
             assertTrue("original contains: $entry", testEntries.contains(entry))
             dest.add(entry)
@@ -325,7 +325,7 @@ open class MMapPageFileTest {
         println("checking copied page")
         dest.entries().asSequence().toList().forEach {
             println("entry: $it")
-            val entry = unmarshalFrom(file!!, it)
+            val entry = unmarshalFrom(dest, it)
             println("entry: $entry")
             assertTrue("destination contains: $entry", testEntries.contains(entry))
             page.add(entry)
@@ -336,7 +336,7 @@ open class MMapPageFileTest {
         println("checking original restored page")
         page.entries().asSequence().toList().forEach {
             println("entry: $it")
-            val entry = unmarshalFrom(file!!, it)
+            val entry = unmarshalFrom(page, it)
             println("entry: $entry")
             assertTrue("original once more contains: $entry", testEntries.contains(entry))
             page.remove(it)

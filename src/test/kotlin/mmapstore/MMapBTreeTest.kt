@@ -19,6 +19,8 @@ open class MMapBTreeTestBase {
 
     @Before fun setupMMapBtreeTestBase() {
         File("/tmp/testfile.bin").delete()
+        MVCC.init()
+
         val f = RandomAccessFile("/tmp/testfile.bin", "rw")
         f.seek(100000 * 8192 - 1)
         f.writeByte(0xFF)

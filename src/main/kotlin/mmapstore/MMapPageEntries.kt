@@ -344,12 +344,16 @@ class ByteArrayPageEntry(val ba: ByteArray) : ComparableMMapPageEntry {
 }
 
 
-fun unmarshalFrom(file: IMMapPageFile, offset: NioPageIndexEntry): MMapPageEntry {
+private fun unmarshalFrom(file: IMMapPageFile, offset: NioPageIndexEntry): MMapPageEntry {
     val pn = offset.entryOffset / PAGESIZE
     val page = file.getPage(pn.toInt())
     return unmarshalFrom(file, page.offset(offset))
 }
 
+fun unmarshalFrom(page: MMapPageFilePage, offset: NioPageIndexEntry): MMapPageEntry {
+    assert (offset.entryOffset / PAGESIZE == page.number.toLong())
+    return unmarshalFrom(page.file, page.offset(offset))
+}
 
 
 fun<T> entryFrom(v: T) : MMapPageEntry {

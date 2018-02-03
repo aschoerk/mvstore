@@ -79,7 +79,7 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
     private fun testPEs(a: MMapPageEntry, b: MMapPageEntry, level: Int = 0) {
         if (level > 3)
             return
-        val tree = file!!.createBTree("test") as MMapBTree
+        val tree = file!!.createBTree("test$level") as MMapBTree
         val testPage = tree.file.newPage()
         testPage.add(a)
         MVCC.begin()
@@ -87,13 +87,18 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
         val check = {
             assertEquals(2,testPage.countEntries())
             testPage.entries().forEach {
-                val res = unmarshalFrom(file!!.file, it)
+                val res = unmarshalFrom(testPage, it)
                 assert(res.type == a.type || res.type == b.type)
                 assert(res == a || res == b)
             }
         }
         check()
         MVCC.commit()
+        check()
+        MVCC.begin()
+        testPage.add(b)
+        assertEquals(3,testPage.countEntries())
+        MVCC.rollback()
         check()
         val lpe = ListPageEntry(a, b)
         testPEs(lpe, b, level + 1)
@@ -199,4 +204,22 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
         (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}
         MVCC.commit()
     }
+
+    fun canRollbackAfterSplit() {
+
+    }
+
+    fun canHandleTransactionsInMultipleTrees() {
+
+    }
+
+
+    fun canHandleTransactionsInMultipleFiles() {
+
+    }
+
+    fun canHandleTransactionsInMultipleThreads() {
+
+    }
+
 }
