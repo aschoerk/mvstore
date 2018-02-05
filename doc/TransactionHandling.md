@@ -1,15 +1,16 @@
 
-# Transaktionen im Zusammenhang mit MMapBTree bzw. MMapDbFile
+# MMapBTree, MMapDbFile Transactional
 
-## Anforderungen
+## Requirements
 
-Benutzer sollen Anfang und Ende von Transaktionen markieren können mit folgenden Eigenschaften
+To support isolation and multiuser-possibilities, a concept of transactions is implemented.
+To support that the client can define the beginning and end of transactions. The following conditions will be met.
 
-* Das Ende soll mit commit abgeschlossen werden können, was bedeutet, dass alle Änderungen stabil persistiert sind
-* Das Ende soll mit rollback abgeschlossen werden können, was bedeutet, dass alle Änderungen zwischen Anfang 
-und rollback rückgängig gemacht werden.
-* Änderungen, die in Transaktionen durchgeführt werden, sollen für andere Transaktionen erst sichtbar werden, wenn commit 
-erfolgreich durchgeführt werden konnte. Das bedeutet, dass nur Auswirkungen von vollständig durchgeführten Transaktionen
-für andere Benutzer sichtbar sind.
+* Successfully ending the transaction using commit, means that all changes are persisted. It is possible that because of 
+unique constraints the commit can not end successfully.
+* It will be possible to end transcations with rollback. That means, that all changes since the start of the current 
+transactions can be undone
+* Changes done during a transaction will not be visible to other transactions until the commit has been successfully completed. 
+
 * Änderungen, die in Transaktionen durchgeführt werden, sollen für die aktuelle Transaktion sichtbar sein. 
 * Nach dem Begin einer Transaktion soll die Datenbank für den Benutzer bis zum commit unverändert bleiben.
