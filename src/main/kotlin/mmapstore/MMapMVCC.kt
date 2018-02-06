@@ -304,17 +304,24 @@ class BTreeOperation(val btree: IMMapBTree,
                      val value: MMapPageEntry)
 
 class MVCCBTree(val btree: IMMapBTree) : IMMapBTree {
+    override val file = btree.file
     override var doCheck: Boolean
         get() = btree.doCheck
         set(value) {btree.doCheck = value}
 
     override fun insert(key: ComparableMMapPageEntry, value: MMapPageEntry) {
-        MVCC.getCurrentTransaction()?.btreeOperations?.add(BTreeOperation(btree, BTreeOperationTypes.INSERT, key, value))
+        val currentTransaction = MVCC.getCurrentTransaction()
+        if (currentTransaction != null) {
+            currentTransaction.btreeOperations.add(BTreeOperation(btree, BTreeOperationTypes.INSERT, key, value))
+        }
         btree.insert(key, value)
     }
 
     override fun remove(key: ComparableMMapPageEntry, value: MMapPageEntry) {
-        MVCC.getCurrentTransaction()?.btreeOperations?.add(BTreeOperation(btree, BTreeOperationTypes.DELETE, key, value))
+        val currentTransaction = MVCC.getCurrentTransaction()
+        if (currentTransaction != null) {
+            currentTransaction.btreeOperations.add(BTreeOperation(btree, BTreeOperationTypes.DELETE, key, value))
+        }
         btree.remove(key, value)
     }
 

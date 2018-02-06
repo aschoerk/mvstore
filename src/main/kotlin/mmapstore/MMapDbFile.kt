@@ -36,7 +36,7 @@ class MMapDbFile(val file: MMapPageFile) {
         val root = file.newPage()
         directory.insert(key, MMapBTreeDirEntry(root.number, mvcc))
         if (mvcc)
-            return MMapBTree(MVCCFile(file), root.number)
+            return MVCCBTree(MMapBTree(MVCCFile(file), root.number))
         else
             return MMapBTree(file, root.number)
     }

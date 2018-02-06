@@ -79,7 +79,7 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
     private fun testPEs(a: MMapPageEntry, b: MMapPageEntry, level: Int = 0) {
         if (level > 3)
             return
-        val tree = file!!.createBTree("test$level") as MMapBTree
+        val tree = file!!.createBTree("test$level") as IMMapBTree
         val testPage = tree.file.newPage()
         testPage.add(a)
         MVCC.begin()

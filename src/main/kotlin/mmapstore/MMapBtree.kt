@@ -76,6 +76,7 @@ fun unmarshallEntry(page: MMapPageFilePage, offset: Long): MMapBTreeEntry {
 }
 
 interface IMMapBTree {
+    val file: IMMapPageFile
     var doCheck: Boolean
     fun insert( key: ComparableMMapPageEntry, value: MMapPageEntry)
     fun remove(key: ComparableMMapPageEntry, value: MMapPageEntry)
@@ -85,7 +86,8 @@ interface IMMapBTree {
     fun check(): String
 }
 
-class MMapBTree(val file: IMMapPageFile, rootPage: Int) : IMMapBTree {
+class MMapBTree(val fileP: IMMapPageFile, rootPage: Int) : IMMapBTree {
+    override val file = fileP
     var root = file.getPage(rootPage)
     override var doCheck: Boolean = false
         get() = field
