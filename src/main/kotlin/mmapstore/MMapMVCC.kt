@@ -51,6 +51,19 @@ class TransactionInfo() {
     val id = (MVCC.transactionIds.incrementAndGet() and 0xFFFF).toShort()
     val baseId = MVCC.nextTra(id)
 
+    var committingId = baseId
+    var committing: Boolean
+        get() { return committingId > baseId }
+        set(value) {
+            if (value)
+                committingId = MVCC.nextTra(id)
+            else
+                committingId = baseId
+        }
+
+    var rollingback = false
+
+
     val fileChangeInfo = mutableMapOf<IMMapPageFile, FileChangeInfo>()
 
     val btreeOperations = mutableListOf<BTreeOperation>()
@@ -76,6 +89,7 @@ class TransactionInfo() {
 
 object MVCC {
     class TraIdPageNo(val traId: Long, val pageNo: Int, val currentMaxTraId: Long)
+    val lock = ReentrantLock()
     var startTime = java.lang.System.currentTimeMillis()
     val changes = AtomicLong(0)
     val transactionIds = AtomicInteger(0)
@@ -191,8 +205,22 @@ object MVCC {
         if (transactionInfo == null) {
             throw IllegalStateException("No Transaction running")
         }
-        clearCurrentTransaction()
+
         try {
+            lock.lock()
+            try {
+                transactionInfo.committing = true
+                transactionInfo.btreeOperations.forEach {
+                    when (it.op) {
+                        BTreeOperationTypes.INSERT -> it.btree.insert(it.key, it.value)
+                        BTreeOperationTypes.DELETE -> it.btree.remove(it.key, it.value)
+                    }
+                }
+            } finally {
+                transactionInfo.committing = false
+                lock.unlock()
+            }
+            /*
             // save all changed pages as preImages, so that current running transactions
             // can yet read expected data.
             transactionInfo.fileChangeInfo.entries.forEach({
@@ -230,7 +258,9 @@ object MVCC {
                     wrappedFile.lock.unlock()
                 }
             })
+            */
         } finally {
+            clearCurrentTransaction()
             cleanup(transactionInfo!!)
         }
     }
@@ -362,7 +392,9 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
         if (transactionInfo != null) {
             lock.lock()
             try {
-                if (!transactionInfo.getFileChangeInfo(this).pageAlreadyChanged(pageNo)) {
+                if (transactionInfo.committing) {
+                    savePreImageDuringCommit(pageNo, transactionInfo)
+                } else if (!transactionInfo.getFileChangeInfo(this).pageAlreadyChanged(pageNo)) {
                     assert(!wrappedFile.getPage(pageNo).traPage)
                     assert(!wrappedFile.getPage(pageNo).preImage)  // not supported yet
                     val newPage = wrappedFile.newPage()
@@ -378,30 +410,52 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
         }
     }
 
+    private fun savePreImageDuringCommit(pageNo: Int, transactionInfo: TransactionInfo) {
+        val original = MMapPageFilePage(wrappedFile, pageNo)
+        val orgId = wrappedFile.getLong(original.offset + CHANGED_BY_TRA_INDEX)
+        if (orgId < transactionInfo.committingId) {
+            if (MVCC.getPreImage(wrappedFile, pageNo, transactionInfo.baseId) == null) {
+                val preImage = wrappedFile.newPage()
+                println("creating preimage ${preImage.number} for ${pageNo}")
+                wrappedFile.copy(original.offset, preImage.offset, PAGESIZE.toInt())
+                MVCC.addPreImage(wrappedFile, pageNo, orgId, preImage.number)
+            }
+            wrappedFile.setLong(original.offset + CHANGED_BY_TRA_INDEX, transactionInfo.committingId)
+        } else {
+            assert(orgId == transactionInfo.committingId)
+        }
+    }
+
     private fun convertOffset(idx: Long): Long {
         var pageNo = (idx / PAGESIZE).toInt()
 
         val transactionInfo = MVCC.getCurrentTransaction()
         if (transactionInfo != null) {
             var lastTra = transactionInfo.baseId
-            var maxChange = Long.MAX_VALUE
-            val pno = transactionInfo.getFileChangeInfo(this).changedPages[pageNo]
-            if (pno != null) {
-               // if (pno.toLong() != idx / PAGESIZE)
-                    // println("converted Offset1: ${pno!! * PAGESIZE + idx % PAGESIZE} page: ${pno} was $pageNo")
-                return pno * PAGESIZE + idx % PAGESIZE
+            if (transactionInfo.committing) {
+                val pageTraId = wrappedFile.getLong(pageNo * PAGESIZE + CHANGED_BY_TRA_INDEX)
+                assert (pageTraId <= transactionInfo.committingId)
+                return idx
             } else {
-                val currentTraId = wrappedFile.getLong(pageNo * PAGESIZE + CHANGED_BY_TRA_INDEX)
-                if (currentTraId > transactionInfo.baseId) {
-                    val pno = MVCC.getMinimalPreImage(this.wrappedFile, pageNo, transactionInfo.baseId)
-                    if (pno!!.toLong() != idx / PAGESIZE)
-                        println("converted Offset2: ${pno!! * PAGESIZE + idx % PAGESIZE} page: ${pno} was $pageNo")
-                    if (pno != null)
-                        return pno * PAGESIZE + idx % PAGESIZE
-                    else
-                        throw AssertionError("no preimage found, but should be there, page is newer than allowed")
+                var maxChange = Long.MAX_VALUE
+                val pno = transactionInfo.getFileChangeInfo(this).changedPages[pageNo]
+                if (pno != null) {
+                    // if (pno.toLong() != idx / PAGESIZE)
+                    // println("converted Offset1: ${pno!! * PAGESIZE + idx % PAGESIZE} page: ${pno} was $pageNo")
+                    return pno * PAGESIZE + idx % PAGESIZE
                 } else {
-                    return idx
+                    val currentTraId = wrappedFile.getLong(pageNo * PAGESIZE + CHANGED_BY_TRA_INDEX)
+                    if (currentTraId > transactionInfo.baseId) {
+                        val pno = MVCC.getMinimalPreImage(this.wrappedFile, pageNo, transactionInfo.baseId)
+                        if (pno!!.toLong() != idx / PAGESIZE)
+                            println("converted Offset2: ${pno!! * PAGESIZE + idx % PAGESIZE} page: ${pno} was $pageNo")
+                        if (pno != null)
+                            return pno * PAGESIZE + idx % PAGESIZE
+                        else
+                            throw AssertionError("no preimage found, but should be there, page is newer than allowed")
+                    } else {
+                        return idx
+                    }
                 }
             }
         }
@@ -496,15 +550,20 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
         println("freePage: $page")
         val transactionInfo = MVCC.getCurrentTransaction()
         if (transactionInfo != null) {
-            val mappedPage = convertPage(page)
-            println("freePage: mapped to: $mappedPage")
-            if ( wrappedFile.getLong(mappedPage * PAGESIZE + CHANGED_BY_TRA_INDEX) == transactionInfo.baseId) {
-                transactionInfo.getFileChangeInfo(this).unmapPage(page)
-                // page was allocated for and during this transaction
-                wrappedFile.freePage(mappedPage)
-                println("actually freed Page: $mappedPage")
+            if (transactionInfo.committing) {
+                savePreImageDuringCommit(page,transactionInfo)
+                wrappedFile.freePage(page)
             } else {
-                transactionInfo.getFileChangeInfo(this).unmapPage(page)
+                val mappedPage = convertPage(page)
+                println("freePage: mapped to: $mappedPage")
+                if (wrappedFile.getLong(mappedPage * PAGESIZE + CHANGED_BY_TRA_INDEX) == transactionInfo.baseId) {
+                    transactionInfo.getFileChangeInfo(this).unmapPage(page)
+                    // page was allocated for and during this transaction
+                    wrappedFile.freePage(mappedPage)
+                    println("actually freed Page: $mappedPage")
+                } else {
+                    transactionInfo.getFileChangeInfo(this).unmapPage(page)
+                }
             }
         } else {
             wrappedFile.freePage(page)
