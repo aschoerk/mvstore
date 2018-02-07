@@ -157,6 +157,9 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
         }
         //(1..valNumber).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}
         MVCC.commit()
+        (1..valNumber).forEach {
+            assert(tree.find(DoublePageEntry(it.toDouble())) == null)
+        }
     }
     @Test
     fun simple100BTreeTraTest() {

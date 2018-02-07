@@ -416,7 +416,7 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
         if (orgId < transactionInfo.committingId) {
             if (MVCC.getPreImage(wrappedFile, pageNo, transactionInfo.baseId) == null) {
                 val preImage = wrappedFile.newPage()
-                println("creating preimage ${preImage.number} for ${pageNo}")
+                println("creating preimage during commit ${preImage.number} for ${pageNo}")
                 wrappedFile.copy(original.offset, preImage.offset, PAGESIZE.toInt())
                 MVCC.addPreImage(wrappedFile, pageNo, orgId, preImage.number)
             }
@@ -527,9 +527,13 @@ class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
         var result = getPage(wrappedFile.newPage().number)
         val transactionInfo = MVCC.getCurrentTransaction()
         if (transactionInfo != null) {
-            wrappedFile.setLong(result.offset + CHANGED_BY_TRA_INDEX, transactionInfo.baseId)
-            transactionInfo.getFileChangeInfo(this).mapPage(result.number, result.number)
-            result.traPage = true
+            if (transactionInfo.committing) {
+                wrappedFile.setLong(result.offset + CHANGED_BY_TRA_INDEX, transactionInfo.committingId)
+            } else {
+                wrappedFile.setLong(result.offset + CHANGED_BY_TRA_INDEX, transactionInfo.baseId)
+                transactionInfo.getFileChangeInfo(this).mapPage(result.number, result.number)
+                result.traPage = true
+            }
         }
         println("New Page: ${result.number}")
         return result
