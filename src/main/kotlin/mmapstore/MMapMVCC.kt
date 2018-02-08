@@ -216,49 +216,51 @@ object MVCC {
                         BTreeOperationTypes.DELETE -> it.btree.remove(it.key, it.value)
                     }
                 }
+                // save all changed pages as preImages, so that current running transactions
+                // can yet read expected data.
+                transactionInfo.fileChangeInfo.entries.forEach({
+                    if (it.key !is IMMapBTree) {
+                        val wrappedFile = it.key.wrappedFile
+                        wrappedFile.lock.lock()
+                        val traId = nextTra(transactionInfo.baseId)
+                        try {
+                            it.value.changedPages.entries.forEach({
+                                val original = wrappedFile.getPage(it.key)
+                                if (it.key != it.value) {
+                                    val orgId = wrappedFile.getLong(original.offset + CHANGED_BY_TRA_INDEX)
+                                    assert(!original.traPage) // trapages are exclusive per transaction, cannot be original
+                                    // at the moment: can only handle not overlapping changes
+                                    assert(orgId < transactionInfo.baseId)
+                                    // save preimage of original
+                                    if (MVCC.getPreImage(wrappedFile, it.key, orgId) == null) {
+                                        val preImage = wrappedFile.newPage()
+                                        println("creating preimage ${preImage.number} for ${original.number}")
+                                        wrappedFile.copy(original.offset, preImage.offset, PAGESIZE.toInt())
+                                        MVCC.addPreImage(wrappedFile, it.key, orgId, preImage.number)
+                                    }
+                                    val copy = wrappedFile.getPage(it.value)
+                                    assert(copy.traPage)
+                                    copy.traPage = false  // make sure it will not be seen in original
+                                    wrappedFile.copy(copy.offset, original.offset, PAGESIZE.toInt())
+                                    wrappedFile.setLong(original.offset + CHANGED_BY_TRA_INDEX, traId)
+                                    wrappedFile.freePage(copy)
+                                } else {
+                                    // page newly necessary in this transaction, so clear only traPage-Bit
+                                    assert(original.traPage)
+                                    original.traPage = false
+                                }
+                            })
+
+                        } finally {
+                            wrappedFile.lock.unlock()
+                        }
+                    }
+                })
             } finally {
                 transactionInfo.committing = false
                 lock.unlock()
             }
-            /*
-            // save all changed pages as preImages, so that current running transactions
-            // can yet read expected data.
-            transactionInfo.fileChangeInfo.entries.forEach({
-                val wrappedFile = it.key.wrappedFile
-                wrappedFile.lock.lock()
-                val traId = nextTra(transactionInfo.baseId)
-                try {
-                    it.value.changedPages.entries.forEach({
-                        val original = wrappedFile.getPage(it.key)
-                        if (it.key != it.value) {
-                            val orgId = wrappedFile.getLong(original.offset + CHANGED_BY_TRA_INDEX)
-                            assert (!original.traPage) // trapages are exclusive per transaction, cannot be original
-                            // at the moment: can only handle not overlapping changes
-                            assert(orgId < transactionInfo.baseId)
-                            // save preimage of original
-                            if (MVCC.getPreImage(wrappedFile, it.key, orgId) == null) {
-                                val preImage = wrappedFile.newPage()
-                                println("creating preimage ${preImage.number} for ${original.number}")
-                                wrappedFile.copy(original.offset, preImage.offset, PAGESIZE.toInt())
-                                MVCC.addPreImage(wrappedFile, it.key, orgId, preImage.number)
-                            }
-                            val copy = wrappedFile.getPage(it.value)
-                            assert (copy.traPage)
-                            copy.traPage = false  // make sure it will not be seen in original
-                            wrappedFile.copy(copy.offset, original.offset, PAGESIZE.toInt())
-                            wrappedFile.setLong(original.offset + CHANGED_BY_TRA_INDEX, traId)
-                            wrappedFile.freePage(copy)
-                        } else {
-                            // page newly necessary in this transaction, so clear only traPage-Bit
-                            assert(original.traPage)
-                            original.traPage = false
-                        }
-                    })
-                } finally {
-                    wrappedFile.lock.unlock()
-                }
-            })
-            */
+
         } finally {
             clearCurrentTransaction()
             cleanup(transactionInfo!!)
