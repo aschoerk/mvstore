@@ -210,6 +210,7 @@ object MVCC {
             lock.lock()
             try {
                 transactionInfo.committing = true
+
                 transactionInfo.btreeOperations.forEach {
                     when (it.op) {
                         BTreeOperationTypes.INSERT -> it.btree.insert(it.key, it.value)
@@ -219,7 +220,7 @@ object MVCC {
                 // save all changed pages as preImages, so that current running transactions
                 // can yet read expected data.
                 transactionInfo.fileChangeInfo.entries.forEach({
-                    if (it.key !is IMMapBTree) {
+                    if (it.key.traHandling == TraHandling.PAGES) {
                         val wrappedFile = it.key.wrappedFile
                         wrappedFile.lock.lock()
                         val traId = nextTra(transactionInfo.baseId)
@@ -337,6 +338,11 @@ class BTreeOperation(val btree: IMMapBTree,
 
 class MVCCBTree(val btree: IMMapBTree) : IMMapBTree {
     override val file = btree.file
+
+    init {
+        file.traHandling = TraHandling.COMMANDS
+    }
+
     override var doCheck: Boolean
         get() = btree.doCheck
         set(value) {btree.doCheck = value}
@@ -378,6 +384,8 @@ class MVCCBTree(val btree: IMMapBTree) : IMMapBTree {
 class MVCCFile(val fileP: IMMapPageFile) : IMMapPageFile {
     override val lock: ReentrantLock
         get() = wrappedFile.lock
+
+    override var traHandling = TraHandling.PAGES
 
     override fun getPage(page: Int): MMapPageFilePage = MMapPageFilePage(this,page * PAGESIZE)
 
