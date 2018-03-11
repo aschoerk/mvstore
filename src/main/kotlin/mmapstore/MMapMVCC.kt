@@ -230,7 +230,7 @@ object MVCC {
                                     val orgId = wrappedFile.getLong(original.offset + CHANGED_BY_TRA_INDEX)
                                     assert(!original.traPage) // trapages are exclusive per transaction, cannot be original
                                     // at the moment: can only handle not overlapping changes
-                                    assert(orgId < transactionInfo.baseId)
+                                    assert(orgId <= transactionInfo.baseId)
                                     // save preimage of original
                                     if (MVCC.getPreImage(wrappedFile, it.key, orgId) == null) {
                                         val preImage = wrappedFile.newPage()

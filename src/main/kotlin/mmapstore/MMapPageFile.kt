@@ -151,7 +151,6 @@ open class MMapPageFile(val buffer: MappedResizeableBuffer, val length: Long) : 
                                 mask = mask shl 1
                             }
                             throw AssertionError("should not reach here")
-
                         }
                 })
             lastByteOffset = 4
