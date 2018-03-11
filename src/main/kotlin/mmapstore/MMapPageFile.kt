@@ -26,6 +26,7 @@ const val PAGES_PER_FREESPACE_REGION = DATAPAGES_PER_FREESPACE_REGION + 1
 
 class FileId
 
+enum class TraHandling{NOTRA, PAGES, COMMANDS}
 interface IMMapPageFile : IMMapBufferWithOffset {
     fun newPage(): MMapPageFilePage
     fun freePage(page: MMapPageFilePage)
@@ -33,6 +34,7 @@ interface IMMapPageFile : IMMapBufferWithOffset {
     fun getPage(page: Int) : MMapPageFilePage
     fun isUsed(pageNum: Int): Boolean
     fun isFree(pageNum: Int): Boolean
+    var traHandling: TraHandling
     val fileId : FileId
     val lock: ReentrantLock
     val wrappedFile: IMMapPageFile
@@ -41,6 +43,8 @@ interface IMMapPageFile : IMMapBufferWithOffset {
 
 open class MMapPageFile(val buffer: MappedResizeableBuffer, val length: Long) : MMapBufferWithOffset(buffer, 0), IMMapBufferWithOffset, IMMapPageFile {
     override val lock = ReentrantLock()
+
+    override var traHandling = TraHandling.NOTRA
 
     override val wrappedFile: IMMapPageFile
         get() { throw AssertionError("wrappedFile requested at original"); }

@@ -80,6 +80,7 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
         if (level > 3)
             return
         val tree = file!!.createBTree("test$level") as IMMapBTree
+        tree.file.traHandling = TraHandling.PAGES
         val testPage = tree.file.newPage()
         testPage.add(a)
         MVCC.begin()
