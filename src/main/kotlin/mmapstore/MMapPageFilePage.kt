@@ -26,6 +26,9 @@ class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
     val number
         get() = (offset / PAGESIZE).toInt()
 
+    /**
+     * page has been copied to preserve it as preimage
+     */
     var preImage: Boolean
         get() = (file.getShort(offset + FLAGS_INDEX).toInt() and PREIMAGE_PAGE) != 0
         set(value) {
@@ -37,6 +40,9 @@ class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
                     file.setShort(offset + FLAGS_INDEX, (file.getShort(offset + FLAGS_INDEX).toInt() xor PREIMAGE_PAGE).toShort())
         }
 
+    /**
+     * page has been created or copy-changed during transaction, therefore should not be seen by other transactions
+     */
     var traPage: Boolean
         get() = (file.getShort(offset + FLAGS_INDEX).toInt() and TRANSACTION_PAGE) != 0
         set(value) {

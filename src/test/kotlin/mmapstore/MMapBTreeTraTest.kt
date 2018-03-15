@@ -166,46 +166,51 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
     fun simple100BTreeTraTest() {
         val tree = file!!.createBTree("test", true)
         tree.doCheck = true
+        val numberOfInserts = 14
         val tra1 = MVCC.begin()
         val tra2 = MVCC.begin()
-        val value = StringPageEntry("Long string to be added as Value into tree but is it long enough??")
-        for (i in 1..100) {
-            tree.insert(DoublePageEntry(i.toDouble()), value)
+        val s = "Long string to be added as Value into tree but is it long enough??"
+        val value = StringPageEntry(s + s + s + s + s + s + s + s + s + s)
+
+        for (i in 1..numberOfInserts) {
+            tree.insert(DoublePageEntry(i.toDouble()), value) // tra2
         }
-        (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) != null)}
+        (1..numberOfInserts).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) != null)}
         MVCC.setCurrentTransaction(tra1)
-        (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}
+        (1..numberOfInserts).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}  // tra1
         MVCC.setCurrentTransaction(tra2)
         MVCC.commit()
         // not seen in tra1 yet in spite of commit
         MVCC.setCurrentTransaction(tra1)
-        (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}
+        (1..numberOfInserts).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}  // tra1 yet isolated to snapshot empty tree
         // can be seen in new transaction
         val tra3 = MVCC.begin()
         val tra4 = MVCC.begin()
-        (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) != null)}
-        (1..100).forEach {
-            assert(tree.find(DoublePageEntry(it.toDouble())) != null)
-            tree.remove(DoublePageEntry(it.toDouble()), value)
+        (1..numberOfInserts).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) != null)}  // tra4 is able to find everything inserted in tra2
+        (1..numberOfInserts).forEach {
+            assert(tree.find(DoublePageEntry(it.toDouble())) != null)  // tra4
+            tree.remove(DoublePageEntry(it.toDouble()), value)         // tra4
         }
-        (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}
+        (1..numberOfInserts).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}  // tra4 did delete everything
         // not deleted in tra4
         MVCC.setCurrentTransaction(tra3)
-        (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) != null)}
+        (1..numberOfInserts).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) != null)}  // tra3 sees state before deletions done in tra4
         // now commit deletes
         MVCC.setCurrentTransaction(tra4)
-        MVCC.commit()
+        MVCC.commit()    // tra4: make deletes persistent
         // yet nothing seen in tra1
         MVCC.setCurrentTransaction(tra1)
-        (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}
-        MVCC.commit()
+        (1..numberOfInserts).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}
+        MVCC.commit()   // tra1 ended without changing action
         // deletes from tra4 not seen in tra3
         MVCC.setCurrentTransaction(tra3)
-        (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) != null)}
-        MVCC.commit()
+        // tra3 is able to find everything inserted in tra2
+        // inspite of tra4 having deleted everything during started tra3
+        (1..numberOfInserts).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) != null)}
+        MVCC.commit()   // tra3 ended without changes
         // tra5 will see the deletes from tra3
         val tra5 = MVCC.begin()
-        (1..100).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}
+        (1..numberOfInserts).forEach{assert(tree.find(DoublePageEntry(it.toDouble())) == null)}
         MVCC.commit()
     }
 

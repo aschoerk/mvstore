@@ -1,5 +1,5 @@
 # mvstore
-PageStore and Btreeimplementation in kotlin for entries of size up to 2048 Bytes.
+PageStore and Implementation of Btree in kotlin for entries of size up to 2048 Bytes.
 
 Currently working on MVCC 
 
@@ -32,7 +32,7 @@ The directory itself is a MMapBTree consisting of
 
 Is a memory mapped file as store. 
 Therefore it is able to work as well as in-memory as persistent
-it is based on the management of the continous memory region with 
+it is based on the management of the continuous memory region with 
 
 * page 0
 * free-pages map
@@ -81,7 +81,7 @@ whether the page is to new and use the preimage if necessary.
 
 #### Commit
 
-The described Isolation-Mechanism can lead to problems if more than one transaction change the same page.
+The described isolation-mechanism can lead to problems if more than one transaction change the same page.
 
 Therefore the BTree-Encapsulation additionally keeps a log of the operation which have been executed 
 on the Tree. 
