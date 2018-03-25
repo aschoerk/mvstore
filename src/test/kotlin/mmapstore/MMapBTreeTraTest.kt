@@ -162,6 +162,64 @@ class MMapBTreeTraTest : MMapBTreeTestBase() {
             assert(tree.find(DoublePageEntry(it.toDouble())) == null)
         }
     }
+
+    @Test
+    fun OneRecordConcurrentInsertTest() {
+        val tree = file!!.createBTree("test", true)
+        tree.doCheck = false
+
+        (1..1000).forEach {
+            val toAdd = it * 10
+            OneRecordConcurrentInsertAndCheck(tree,1.0 + toAdd, 2.0 + toAdd)
+            OneRecordConcurrentInsertAndCheck(tree,0.0 + toAdd, 0.0 + toAdd)
+            OneRecordConcurrentInsertAndCheck(tree,3.0 + toAdd, 3.0 + toAdd)
+        }
+
+    }
+
+    private fun OneRecordConcurrentInsertAndCheck(tree: IMMapBTree, tra1Key: Double, tra2Key: Double) {
+
+        val tra1KeyEntry = DoublePageEntry(tra1Key)
+        val tra1ValueEntry = StringPageEntry("transaction 1")
+        val tra2KeyEntry = DoublePageEntry(tra2Key)
+        val tra2ValueEntry = StringPageEntry("transaction 2")
+
+        val tra1 = MVCC.begin()  // tra1
+        val tra2 = MVCC.begin()  // tra2
+        tree.insert(tra2KeyEntry, tra2ValueEntry)   // tra2
+
+        MVCC.setCurrentTransaction(tra1)
+        assert(tree.find(tra2KeyEntry) == null)       // tra1
+        tree.insert(tra1KeyEntry, tra1ValueEntry)     // tra1
+        var tra1KeySearchResult = tree.find(tra1KeyEntry)   // tra1
+        assert(tra1KeySearchResult!!.count() == 1  && tra1KeySearchResult[0] == tra1ValueEntry)
+        var tra2KeySearchResult = tree.find(tra2KeyEntry)   // tra1
+        assert(tra2KeySearchResult == null || tra2KeySearchResult[0] == tra1ValueEntry && tra1Key == tra2Key) // tra1
+
+
+        MVCC.setCurrentTransaction(tra2)
+        tra1KeySearchResult = tree.find(tra1KeyEntry)   // tra2
+        assert(tra1KeySearchResult == null || tra1KeySearchResult[0] == tra2ValueEntry && tra1Key == tra2Key)  // tra2
+        tra2KeySearchResult = tree.find(tra2KeyEntry)   // tra2
+        assert(tra2KeySearchResult != null && tra2KeySearchResult[0] == tra2ValueEntry) // tra2
+        MVCC.commit()
+
+        // no tra1 is persisted, tra2 is not yet persisted
+
+        tra1KeySearchResult = tree.find(tra1KeyEntry)   // no tra
+        assert(tra1KeySearchResult == null || tra1KeySearchResult[0] == tra2ValueEntry && tra1Key == tra2Key)  // no tra
+        assert(tree.find(tra2KeyEntry) != null)  // no tra
+
+        MVCC.setCurrentTransaction(tra1)
+        assert(tree.find(tra1KeyEntry) != null)  // tra1
+        tra2KeySearchResult = tree.find(tra2KeyEntry)
+        assert(tree.find(tra2KeyEntry) == null || tra2KeySearchResult!![0] == tra1ValueEntry && tra1Key == tra2Key)  // tra1
+        MVCC.commit()
+
+        assert(tree.find(tra1KeyEntry) != null)  // no tra
+        assert(tree.find(tra2KeyEntry) != null)  // no tra
+    }
+
     @Test
     fun simple100BTreeTraTest() {
         val tree = file!!.createBTree("test", true)

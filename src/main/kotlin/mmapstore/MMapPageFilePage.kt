@@ -14,6 +14,7 @@ const val INDEX_ENTRY_SIZE = 4
 
 const val PREIMAGE_PAGE = 0x2000
 const val TRANSACTION_PAGE = 0x1000
+const val SORTED_FLAG = 0x4000
 
 
 class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
@@ -38,6 +39,18 @@ class MMapPageFilePage(val file: IMMapPageFile, val offset: Long) {
             else
                 if (!value && current)
                     file.setShort(offset + FLAGS_INDEX, (file.getShort(offset + FLAGS_INDEX).toInt() xor PREIMAGE_PAGE).toShort())
+        }
+
+
+    var sorted: Boolean
+        get() = (file.getShort(offset + FLAGS_INDEX).toInt() and SORTED_FLAG) != 0
+        set(value) {
+            val current = sorted
+            if (value && !current)
+                file.setShort(offset + FLAGS_INDEX, (file.getShort(offset + FLAGS_INDEX).toInt() or SORTED_FLAG).toShort())
+            else
+                if (!value && current)
+                    file.setShort(offset + FLAGS_INDEX, (file.getShort(offset + FLAGS_INDEX).toInt() xor SORTED_FLAG).toShort())
         }
 
     /**

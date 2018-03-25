@@ -20,7 +20,7 @@
     <description>A MVCC Tree Implementation in Kotlin</description>
 
     <properties>
-        <kotlin.version>1.2.10</kotlin.version>
+        <kotlin.version>1.2.30</kotlin.version>
         <kotlin.compiler.incremental>true</kotlin.compiler.incremental>
         <junit.version>4.12</junit.version>
         <slf4j.api.version>1.7.25</slf4j.api.version>

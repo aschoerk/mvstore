@@ -3,7 +3,16 @@ PageStore and Implementation of Btree in kotlin for entries of size up to 2048 B
 
 Currently working on MVCC 
 
-### Principles
+## next TODOs
+
+* simple100BTreeTraTest
+* fix page leak because of preImages
+* speed up getSortedEntries
+    * introduce/maintain sortedflag
+    * keep index sorted
+    * only unmarshal what is necessary for binary search
+
+## Principles
 
 * Data is stored memory mapped
 * Memorymap is organized in pages of constant size (PAGESIZE)
@@ -12,6 +21,108 @@ Currently working on MVCC
 The number of pages used for this is depending on the length of the 
 original region 
 
+# MVCC
+
+Snapshot-Isolation is implemented using PostImages and PreImages.
+Each access to a page of a certain number during a transaction is mapped according to some factors:
+
+* The transaction phase: 
+   * No Transaction
+   * During the transaction
+   * During rolling forward
+   * During rolling back
+   * Pre- And Postimage-Maintenance
+* An entry in the page, which signifies which transaction did the last change on that page
+* Flags in the page signifiing whether it is a Post-, Preimage or normal/valid page
+* A number n or timestamp the current transaction is assigned with. This number
+    * allows it to find out which transaction created it t(n)
+    * is ordered according to the creation time
+    
+Some statements:
+
+* Postimages belong to exactly one transaction
+* PreImages might be necessary for several transactions. Rules:
+   
+
+* Phase: No Transaction
+   * Page with certain number gets accessed as such. No mapping takes place
+   * Accessed pages must not be pre- or postimages
+   * therefore: pages without preimage and postimage flags together must form the consistent file 
+   on which transactions are active
+   
+* Phase: During Transaction m with id m-id
+   *  Access of page with number n
+      * look for postimage(m, n) if exists, use that
+          * then t(m-id) == t(postimage(m, n)) postimage must be true, page can be changed
+      * if m-id >= id(n) then: not preimage or postimage: you can use that page
+      * search for youngest preimage(n) with id(preimage(n)) < m-id  
+      
+   * Change of page with number n
+      * find out which page must be accessed according to rules above
+      * if page is postimage, just change it further
+      * create postimage and change that
+      * write m-id into postimage-page
+      
+
+* Phase: Rolling forward transaction with id m-id
+   * Locking??
+   * Access of page with number n    
+      * if m-id >= n then: not preimage or postimage: you can use that page
+      * search for youngest preimage(n) with preimage(n) < m-id  
+      
+   * Change of page with number n
+      * create preimage if it does not exist yet
+      * write m-id into postimage-page
+
+   * End of tra
+      * free all postimage-pages
+      
+* Phase: Rolling back transaction with id m-id
+   * End of tra
+      * free all postimage-pages
+   
+## Usability of preimage-pages
+
+### example1
+
+Running Tra: t1 
+Done Tra: t2
+
+t1 < t2, t2 left preimage p(no_id) p now has id: id(t2)
+End of t1 must delete p(no_id) because id(org(p)) <= minimal transaction_id (no transaction running animore)
+
+### example2
+
+Running Tra: t1, t3 
+Done Tra: t2
+
+t1,t3 < t2, t2 left preimage p(no_id) p now has id: id(t2)
+End of t1 must not delete p(no_id) because id(org(p)) > minimal transaction_id id(t3)
+End of t3 must delete p(no_id) because id(org(p)) <= minimal transaction_id (no transaction running animore)
+
+### example3
+
+Running Tra: t1 
+Done Tra: t2 > t3 left preimage p(no_id)
+Done Tra: t3  uses preimage p(no_id) in case of change: created no additional preimage
+
+End of t1 must delete p(no_id) because id(org(p)) <= minimal transaction_id (no transaction running animore)
+
+### example4
+
+Running Tra: t1 
+Done Tra: t2 left preimage p(no_id)
+Start/End Tra: t3 reads and changes p and leaves no additional preimage for t1, since id(p) > id (t1)
+
+### example5
+
+Running Tra: t1 
+Done Tra: t2 left preimage p(no_id)
+Start Tra: t3 
+Start/End Tra: t4 reads and changes p and leaves additional preimage for t3, since id(p) <= id (t3)
+End Tra: t3 delete preimage p(id(t2)) since for all t: id(t) < id(t2)
+ 
+    
 
 ## Building Blocks
 
