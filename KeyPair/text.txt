@@ -1,0 +1,3 @@
+Dies ist ein Test, ob ein
+Textfile encrypted und decrypted wird.
+
